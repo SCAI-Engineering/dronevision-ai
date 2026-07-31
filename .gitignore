@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Benchmark output is regenerated; the committed results table lives in README.
+bench/out/
+
+# NOTE: data/corpus/ is deliberately NOT ignored — the recorded camera corpus
+# ships with the repo so anyone can reproduce the benchmarks without Gazebo.
+# Keep it small (~30 s, JPEG). Large intermediate captures go in data/scratch/.
+data/scratch/

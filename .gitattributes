@@ -1,0 +1,22 @@
+# Authored on Windows, deployed on Linux (Raspberry Pi) and inside Linux
+# containers. Normalize to LF in the repo so shell scripts stay executable on
+# the target — CRLF in a script yields "bad interpreter: /bin/bash^M".
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.md   text eol=lf
+*.toml text eol=lf
+
+# Recorded camera corpus and model weights are binary; never touch them.
+*.npz  binary
+*.npy  binary
+*.jpg  binary
+*.png  binary
+*.onnx binary
+*.pt   binary
+*.pte  binary
+*.bin  binary
+*.zip  binary

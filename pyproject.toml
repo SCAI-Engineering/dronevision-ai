@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dronevision"
+version = "0.1.0"
+description = "Arm-optimized multi-camera 3D localization for edge SBCs — localizes a drone from fixed cameras, no GPS"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "SCAI" }]
+keywords = ["arm", "aarch64", "edge-ai", "quantization", "int8", "localization",
+            "triangulation", "raspberry-pi", "drone", "computer-vision"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Kept deliberately small: this must install on a bare Raspberry Pi.
+# Nothing here depends on Gazebo, ROS, PX4 or MAVLink — see README, "Design rule".
+dependencies = [
+  "numpy>=1.24",
+  "pyyaml>=6.0",
+  "opencv-python-headless>=4.8",
+]
+
+[project.optional-dependencies]
+net = ["pyzmq>=25.0"]                      # NetSource: the camera service client
+ort = ["onnxruntime>=1.17"]                # ONNX Runtime inference backend
+torch = ["torch>=2.2", "ultralytics>=8.3"] # reference backend + model export
+pi = ["pyzmq>=25.0", "onnxruntime>=1.17"]  # what a Raspberry Pi deployment needs
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/SCAI-Engineering/dronevision-ai"
+Source = "https://github.com/SCAI-Engineering/dronevision-ai"
+
+# Only `dronevision/` is library code. `bench/` holds runnable scripts that import
+# it and is intentionally NOT packaged — what ships to a device is the AI block.
+[tool.setuptools.packages.find]
+include = ["dronevision*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

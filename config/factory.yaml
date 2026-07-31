@@ -1,0 +1,111 @@
+# Deployment site: "factory" — a 20 x 20 x 5 m industrial enclosure with four
+# ceiling-corner cameras looking inward and down at a drone flying inside.
+#
+# This file fully describes one site. Localizing in a different room, or with real
+# cameras instead of simulated ones, means writing another file like it — not
+# editing code. Every value below was previously hard-coded in the pipeline.
+#
+# UNITS: metres and radians throughout. Angles are radians, not degrees.
+
+name: factory
+description: 20x20x5 m warehouse, 4 corner-mounted cameras, single drone target
+
+# ---------------------------------------------------------------------------
+# World frame
+# ---------------------------------------------------------------------------
+# ENU: +x East, +y North, +z Up. Origin at the centre of the floor, so the room
+# spans x,y in [-10, +10] and z in [0, 5]. The camera poses below and every 3D
+# position this system outputs are expressed in this frame.
+world:
+  convention: ENU
+  origin: floor_centre
+
+# ---------------------------------------------------------------------------
+# Defaults inherited by each camera unless it overrides them
+# ---------------------------------------------------------------------------
+defaults:
+  resolution: [640, 360]           # [width, height] in pixels
+
+  # Intrinsics. Two models are supported:
+  #
+  #   fov     — derive the focal length from the horizontal field of view, which
+  #             is what a simulated camera is specified with. Assumes square
+  #             pixels and a principal point at the exact image centre.
+  #   pinhole — give fx, fy, cx, cy directly, which is what a real camera
+  #             calibration produces. Use this for physical hardware.
+  #
+  # Switching a site from simulated to real cameras is therefore a change of
+  # model here, with no change anywhere in the code.
+  intrinsics:
+    model: fov
+    hfov: 1.2                      # horizontal field of view (radians) ~= 68.8 deg
+
+  # How the camera's own axes relate to its pose. A simulated gz camera looks
+  # along +x with +y left and +z up; the projection maths wants the standard
+  # optical convention (+x right, +y down, +z along the view axis). Naming the
+  # convention keeps that adapter out of the code as an unexplained 3x3 literal.
+  axes: gz_camera
+
+# ---------------------------------------------------------------------------
+# Cameras
+# ---------------------------------------------------------------------------
+# Mounted at the four upper corners at 4.5 m, each pitched 0.30 rad downward and
+# yawed to face the room centre. Names encode the compass corner.
+#
+# Note every camera sits at the same height. That is deliberately suboptimal:
+# coplanar cameras constrain altitude more weakly than horizontal position. It
+# matches the simulated world as built, and is called out here rather than
+# discovered later in the error numbers.
+cameras:
+  cam_ne:
+    position: [9.0, 9.0, 4.5]
+    rpy: [0.0, 0.30, -2.356]       # yaw -135 deg: faces south-west
+  cam_nw:
+    position: [-9.0, 9.0, 4.5]
+    rpy: [0.0, 0.30, -0.785]       # yaw  -45 deg: faces south-east
+  cam_sw:
+    position: [-9.0, -9.0, 4.5]
+    rpy: [0.0, 0.30, 0.785]        # yaw  +45 deg: faces north-east
+  cam_se:
+    position: [9.0, -9.0, 4.5]
+    rpy: [0.0, 0.30, 2.356]        # yaw +135 deg: faces north-west
+
+# ---------------------------------------------------------------------------
+# Target
+# ---------------------------------------------------------------------------
+# What the detectors actually see, versus the point everything else means by
+# "where the drone is". The colour-marker detector locks onto a marker mounted
+# above the vehicle origin, so its triangulated point sits `marker_dz` high and is
+# corrected down. Shape-based detectors (YOLO, motion) centre on the airframe
+# itself, so this offset is per-detector, not global.
+#
+# MEASURED, NOT READ OFF THE MODEL. The simulator's model file declares the marker
+# sphere at 0.18 m above its parent link, and that number is misleading: the pose
+# that ground truth and the autopilot both report is the *model* origin, which
+# sits below that link. Measured against the model origin the offset is 0.4333 m,
+# and it held constant to 0.1 mm across a 2.26 m climb — so it is a fixed
+# structural offset, not a calibration error. Taking 0.18 from the model file puts
+# every reported altitude 253 mm too high.
+#
+# Verify this per vehicle model. It is the one constant here that cannot be
+# derived from the world file, and getting it wrong is invisible: the horizontal
+# axes stay accurate to well under a millimetre while altitude is quietly wrong.
+target:
+  name: x500
+  marker_dz: 0.4333                # marker height above the reported vehicle origin (m)
+  ground_truth_pose: x500_0        # which entry on the pose topic is world-frame truth.
+                                   # NOT "base_link": that entry exists, looks
+                                   # authoritative, and never moves.
+
+# ---------------------------------------------------------------------------
+# Triangulation tuning
+# ---------------------------------------------------------------------------
+triangulation:
+  # A candidate 3D point is reprojected into every contributing camera; views
+  # disagreeing by more than this are dropped and the point re-solved. Generous
+  # at 640x360 — tighten it and occlusion tolerance suffers, loosen it and a
+  # badly mis-detecting camera drags the estimate.
+  reproj_threshold_px: 25.0
+
+  # Fewer than two views cannot determine a 3D point at all.
+  min_views: 2

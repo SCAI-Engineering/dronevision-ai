@@ -1,0 +1,116 @@
+{
+  "corpus_version": 1,
+  "site": "factory",
+  "cameras": [
+    "cam_ne",
+    "cam_nw",
+    "cam_sw",
+    "cam_se"
+  ],
+  "resolution": [
+    640,
+    360
+  ],
+  "jpeg_quality": 90,
+  "frame_sets": 337,
+  "requested_rate_hz": 25.0,
+  "duration_s": 30.048,
+  "truth_pose": "x500_0",
+  "marker_dz": 0.4333,
+  "note": "hover, all-cameras-fresh sets, time-aligned truth",
+  "site_config": {
+    "name": "factory",
+    "description": "20x20x5 m warehouse, 4 corner-mounted cameras, single drone target",
+    "world": {
+      "convention": "ENU",
+      "origin": "floor_centre"
+    },
+    "defaults": {
+      "resolution": [
+        640,
+        360
+      ],
+      "intrinsics": {
+        "model": "fov",
+        "hfov": 1.2
+      },
+      "axes": "gz_camera"
+    },
+    "cameras": {
+      "cam_ne": {
+        "position": [
+          9.0,
+          9.0,
+          4.5
+        ],
+        "rpy": [
+          0.0,
+          0.3,
+          -2.356
+        ]
+      },
+      "cam_nw": {
+        "position": [
+          -9.0,
+          9.0,
+          4.5
+        ],
+        "rpy": [
+          0.0,
+          0.3,
+          -0.785
+        ]
+      },
+      "cam_sw": {
+        "position": [
+          -9.0,
+          -9.0,
+          4.5
+        ],
+        "rpy": [
+          0.0,
+          0.3,
+          0.785
+        ]
+      },
+      "cam_se": {
+        "position": [
+          9.0,
+          -9.0,
+          4.5
+        ],
+        "rpy": [
+          0.0,
+          0.3,
+          2.356
+        ]
+      }
+    },
+    "target": {
+      "name": "x500",
+      "marker_dz": 0.4333,
+      "ground_truth_pose": "x500_0"
+    },
+    "triangulation": {
+      "reproj_threshold_px": 25.0,
+      "min_views": 2
+    }
+  },
+  "truth_bounds": {
+    "min": [
+      -0.085,
+      0.02,
+      2.422
+    ],
+    "max": [
+      0.011,
+      0.13,
+      2.477
+    ]
+  },
+  "camera_skew_ms": {
+    "mean": 39.07,
+    "p95": 84.0,
+    "max": 84.0
+  }
+}
