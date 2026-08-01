@@ -79,6 +79,13 @@ def main(argv=None):
     ap.add_argument("--frames", default=None, help="measure live from this endpoint")
     ap.add_argument("--site", default="factory")
     ap.add_argument("--detector", default="color")
+    ap.add_argument("--runtime", default=None,
+                    help="yolo only: ultralytics | onnx | executorch")
+    ap.add_argument("--threads", type=int, default=None,
+                    help="pin inference threads; required for comparable timings")
+    ap.add_argument("--imgsz", type=int, default=320,
+                    help="network input size; must match across runtimes or the "
+                         "comparison measures different amounts of work")
     ap.add_argument("--mode", default="decoded", help="decoded | encoded | stream")
     ap.add_argument("-n", "--samples", type=int, default=200, help="live only")
     ap.add_argument("--interval", type=float, default=0.05, help="live only")
@@ -94,7 +101,10 @@ def main(argv=None):
 
     site = load_site(a.site)
     src, live = open_source(a, site)
-    detector = make_detector(a.detector)
+    det_kw = {}
+    if a.detector in ("yolo", "hybrid"):
+        det_kw = {"runtime": a.runtime, "threads": a.threads, "imgsz": a.imgsz}
+    detector = make_detector(a.detector, **det_kw)
     occlude = [c for c in a.occlude.split(",") if c]
     pipe = LocalizationPipeline(cal=site, detector=detector,
                                 smoother=EMASmoother(a.alpha),

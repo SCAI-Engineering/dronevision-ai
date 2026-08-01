@@ -113,7 +113,31 @@ class Calibration:
     marker_dz: float = 0.0
     reproj_threshold_px: float = 25.0
     min_views: int = 2
+    offsets: dict = None             # detector-specific vertical offsets, metres
     raw: dict = None                 # the parsed document, for anything not modelled
+
+    def target_offset(self, key):
+        """Vertical offset from a detector's reported point down to the vehicle origin.
+
+        Different detectors look at different parts of the vehicle, so each needs its own
+        correction — the colour marker sits far higher than a bounding-box centroid.
+        Applying the wrong one is invisible in the horizontal axes and shifts every
+        altitude by a constant, which reads as a calibration quirk rather than a bug.
+
+        Returns 0.0 for `None`, and raises on an unknown key rather than silently
+        applying no correction.
+        """
+        if key is None:
+            return 0.0
+        table = self.offsets or {}
+        if key in table:
+            return float(table[key])
+        if key == "marker_dz":
+            return float(self.marker_dz)
+        raise KeyError(
+            f"site {self.name!r} defines no target offset {key!r}; "
+            f"available: {sorted(table) or ['marker_dz']}. Measure it with "
+            f"`bench.accuracy --marker-offset` rather than guessing.")
 
     # -- convenience views used throughout the pipeline ---------------------
 
@@ -192,10 +216,15 @@ class Calibration:
 
         target = doc.get("target", {}) or {}
         tri = doc.get("triangulation", {}) or {}
+        offsets = dict(target.get("offsets", {}) or {})
+        if "marker_dz" in target and "marker_dz" not in offsets:
+            offsets["marker_dz"] = float(target["marker_dz"])
+
         return cls(
             name=doc.get("name", "unnamed"),
             cameras=cameras,
-            marker_dz=float(target.get("marker_dz", 0.0)),
+            offsets=offsets,
+            marker_dz=float(offsets.get("marker_dz", target.get("marker_dz", 0.0))),
             reproj_threshold_px=float(tri.get("reproj_threshold_px", 25.0)),
             min_views=int(tri.get("min_views", 2)),
             raw=doc,

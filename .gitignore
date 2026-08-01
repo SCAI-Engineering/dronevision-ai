@@ -14,3 +14,4 @@ bench/out/
 # ships with the repo so anyone can reproduce the benchmarks without Gazebo.
 # Keep it small (~30 s, JPEG). Large intermediate captures go in data/scratch/.
 data/scratch/
+bench/out/

@@ -90,12 +90,30 @@ cameras:
 # Verify this per vehicle model. It is the one constant here that cannot be
 # derived from the world file, and getting it wrong is invisible: the horizontal
 # axes stay accurate to well under a millimetre while altitude is quietly wrong.
+# EACH DETECTOR HAS ITS OWN OFFSET. They do not look at the same thing: the colour
+# detector finds a marker mounted above the airframe, while shape detectors centre on the
+# airframe's bounding box, whose centroid sits above the origin too — by a different
+# amount. Both were measured against ground truth on the corpus, not assumed.
 target:
   name: x500
-  marker_dz: 0.4333                # marker height above the reported vehicle origin (m)
   ground_truth_pose: x500_0        # which entry on the pose topic is world-frame truth.
                                    # NOT "base_link": that entry exists, looks
                                    # authoritative, and never moves.
+
+  offsets:
+    # Red marker sphere, found by the colour detector.
+    # Measured 0.4343 on the ground and 0.4334 hovering at 2.5 m — agreeing to 0.9 mm
+    # across 2.53 m, so it is structural. The vehicle model file says 0.18, which is the
+    # height above the parent LINK, not above the origin ground truth reports.
+    marker_dz: 0.4333
+    # Bounding-box centroid, found by shape detectors (yolo / motion / hybrid).
+    # Measured +0.0950 m, sd 0.0079 over 333 samples. Only observed across a 0.055 m
+    # altitude span, so it is well determined but not yet confirmed as structural —
+    # re-measure while climbing.
+    airframe_dz: 0.0950
+
+  # Retained: older configs and code read this name directly.
+  marker_dz: 0.4333
 
 # ---------------------------------------------------------------------------
 # Triangulation tuning

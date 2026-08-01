@@ -30,26 +30,36 @@ import os
 import cv2
 import numpy as np
 
-from dronevision.l2_perception.paths import default_yolo, model_path
-from dronevision.l2_perception.vision_utils import best_box_center, red_centroid
+from dronevision.l2_perception.paths import resolve_model
+from dronevision.l2_perception.vision_utils import red_centroid
+from dronevision.l2_perception.yolo_codec import best_center
 
 
 class Detector:
     """Common base. Subclasses implement `detect` and set `name`.
 
-    `detects_marker` says *what* the reported pixel is centred on, which the
-    caller needs in order to know whether to apply the marker's vertical offset:
+    `target_offset_key` names WHAT the reported pixel is centred on, so the caller can
+    look up the right vertical correction in the site config. Detectors do not all look
+    at the same thing:
 
-        True   the marker mounted above the airframe -> subtract `marker_dz`
-        False  the airframe itself -> no correction
+        "marker_dz"    a marker mounted well above the airframe (colour detector)
+        "airframe_dz"  the airframe's bounding-box centroid (shape detectors)
+        None           already the vehicle origin; no correction
 
-    Getting this wrong does not fail visibly. It biases every reported altitude by
-    the offset — 18 cm in the bundled site — which looks like a plausible
-    calibration error rather than a bug.
+    This was a boolean once, which was wrong: it could only express "marker or nothing",
+    while the measured offsets differ per detector — 0.4333 m for the marker and 0.0950 m
+    for a bounding-box centroid on the bundled site. Getting it wrong never fails
+    visibly. It shifts every reported altitude by a constant and leaves the horizontal
+    axes untouched, which reads as a calibration quirk rather than a bug.
     """
 
     name = "base"
-    detects_marker = False
+    target_offset_key = None
+
+    @property
+    def detects_marker(self):
+        """Kept for callers written against the older boolean."""
+        return self.target_offset_key == "marker_dz"
 
     def detect(self, img_rgb, cam=None):
         raise NotImplementedError
@@ -59,50 +69,69 @@ class ColorDetector(Detector):
     """Largest red blob in the frame — the marker, not the airframe."""
 
     name = "color"
-    detects_marker = True
+    target_offset_key = "marker_dz"
 
     def detect(self, img_rgb, cam=None):
         return red_centroid(img_rgb, "RGB")
 
 
 class YoloDetector(Detector):
-    """Ultralytics YOLO detecting the airframe by shape.
+    """YOLO detecting the airframe by shape, executed by a swappable runtime.
 
-    This is the reference implementation, running via PyTorch. It is the baseline
-    the optimized Arm backends are measured against — not itself the thing you
-    would deploy to a Raspberry Pi.
+    The network and the engine that runs it are independent choices: the same weights go
+    through PyTorch, ONNX Runtime or ExecuTorch, selected with `runtime=`. Measuring the
+    difference between those is what this project is for, so nothing here may assume one.
 
-    Trained against labels derived from the airframe's projected bounding box, so
-    the reported centre is the airframe and no marker offset applies.
+    `imgsz` DEFAULTS TO 320 AND IS NOT MERELY A HINT. Ultralytics left alone infers at 640
+    with rectangular letterboxing, while an exported graph is a fixed 320x320 square —
+    about 40% more pixels on one side. Comparing them would report a resolution artifact
+    as a speedup. Every runtime is pinned to the same input size, and each reports the
+    shape it actually ran so a results row can be checked.
+
+    Trained against labels derived from the airframe's projected bounding box, so the
+    reported centre is the airframe and no marker offset applies.
     """
 
     name = "yolo"
-    detects_marker = False
+    target_offset_key = "airframe_dz"
 
-    def __init__(self, model_path_=None, conf=0.25, imgsz=None):
-        from ultralytics import YOLO           # imported late: heavy, and optional
+    def __init__(self, model=None, conf=0.25, imgsz=320, runtime=None, threads=None,
+                 iou=0.45, model_path_=None, **runtime_kw):
+        from dronevision.l2_perception.runtimes import canonical, make_runtime
 
-        if model_path_ is None:
-            model_path_ = os.environ.get("YOLO_MODEL") or default_yolo()
-        if model_path_ is None:
-            raise FileNotFoundError(
-                "no detector weights found; put one in models/ or set YOLO_MODEL")
-        self.path = model_path(model_path_)
-        self.model = YOLO(str(self.path))
+        model = model if model is not None else model_path_   # old keyword
+        if model is None:
+            model = os.environ.get("YOLO_MODEL")
+
+        rt_name = canonical(runtime or os.environ.get("RUNTIME") or "ultralytics")
+        self.path = resolve_model(model, rt_name)
         self.conf = conf
-        self.imgsz = imgsz
-        # First inference allocates buffers and is far slower than the rest.
-        # Doing it here keeps that cost out of the caller's timing.
-        self.model.predict(np.zeros((360, 640, 3), np.uint8), verbose=False)
+        self.iou = iou
+
+        self.runtime = make_runtime(rt_name, model=self.path, imgsz=imgsz,
+                                    threads=threads, **runtime_kw)
+        # Instance attribute only: the class attribute stays "yolo" so BACKENDS lookups
+        # and `detects_marker` logic keep working, while logs and results rows show which
+        # engine actually ran.
+        self.name = f"yolo/{self.runtime.name}"
+        self.imgsz = self.runtime.imgsz
+        self.runtime.warmup()
 
     def detect(self, img_rgb, cam=None):
-        bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
-        kw = {"conf": self.conf, "verbose": False}
-        if self.imgsz:
-            kw["imgsz"] = self.imgsz
-        r = self.model.predict(bgr, **kw)[0]
-        c = best_box_center(r)
-        return c[:2] if c else None
+        dets = self.runtime.detect_boxes(img_rgb, conf=self.conf, iou=self.iou,
+                                         max_det=1)
+        return best_center(dets)
+
+    @property
+    def last_timings(self):
+        """Per-stage milliseconds for the most recent call: pre / infer / post."""
+        return self.runtime.last_timings
+
+    def describe(self):
+        """Provenance for a results row — see `runtimes.base.InferenceRuntime`."""
+        d = self.runtime.describe()
+        d.update({"detector": "yolo", "conf": self.conf, "iou": self.iou})
+        return d
 
 
 class MotionDetector(Detector):
@@ -118,7 +147,7 @@ class MotionDetector(Detector):
     """
 
     name = "motion"
-    detects_marker = False
+    target_offset_key = "airframe_dz"
 
     def __init__(self, coast=20, amin=8, amax=9000):
         self._mog = {}
@@ -170,11 +199,13 @@ class HybridDetector(MotionDetector):
     """
 
     name = "hybrid"
-    detects_marker = False
+    target_offset_key = "airframe_dz"
 
-    def __init__(self, pad=28, coast=20, yolo=None):
+    def __init__(self, pad=28, coast=20, yolo=None, **yolo_kw):
         super().__init__(coast=coast)
-        self.yolo = yolo if yolo is not None else YoloDetector()
+        # Runtime and thread settings must reach the inner detector, or a sweep would
+        # silently benchmark the default engine while claiming to test another.
+        self.yolo = yolo if yolo is not None else YoloDetector(**yolo_kw)
         self.pad = pad
 
     def detect(self, img_rgb, cam="default"):

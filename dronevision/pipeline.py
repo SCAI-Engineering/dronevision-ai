@@ -63,12 +63,20 @@ class LocalizationPipeline:
         self.cams = list(cams) if cams is not None else self.cal.cam_names
         #: Cameras to ignore. Used to reproduce occlusion without changing a world.
         self.occlude = set(occlude or ())
-        # Whether the detected point sits above the airframe. Taken from the
-        # detector unless overridden, because getting it wrong silently biases
-        # every altitude by the offset rather than failing.
-        self.marker_correction = (
-            getattr(self.detector, "detects_marker", False)
-            if marker_correction is None else bool(marker_correction))
+        # How far above the vehicle origin the detected point sits. Taken from the
+        # detector's own declaration and looked up in the site config, because the
+        # detectors do not look at the same thing: a colour marker sits 0.4333 m up on
+        # this site, a bounding-box centroid 0.0950 m. Getting it wrong never raises —
+        # it shifts every altitude by a constant and leaves horizontal accuracy intact.
+        if marker_correction is None:
+            key = getattr(self.detector, "target_offset_key", None)
+        elif marker_correction:
+            key = "marker_dz"
+        else:
+            key = None
+        self.target_offset_key = key
+        self.target_dz = self.cal.target_offset(key)
+        self.marker_correction = bool(key)      # older callers read this
         self.timing = timing
         self.seq = 0
 
@@ -120,8 +128,7 @@ class LocalizationPipeline:
 
         t0 = tick()
         sm = self.smoother.update(X).copy()
-        if self.marker_correction:
-            sm[2] -= self.cal.marker_dz
+        sm[2] -= self.target_dz
         if self.timing:
             t["smooth"] = (tick() - t0) * 1e3
 
