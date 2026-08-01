@@ -5,9 +5,8 @@ enough to close a control loop on a Raspberry Pi.
 
 **License: Apache-2.0** · Arm Create: AI Optimization Challenge 2026, Physical AI track
 
-> 🚧 **In progress.** The pipeline works and is measured against ground truth (numbers
-> below). The Arm optimization — quantization, inference runtimes, the Pi 4 vs Pi 5
-> comparison — is the deliverable and is **not done yet**.
+> 🚧 **In progress.** The pipeline runs on a Raspberry Pi 4 and the first Arm numbers are
+> in (below). Quantization, the Pi 5 comparison and KleidiAI are still outstanding.
 
 ## The question this project answers
 
@@ -58,15 +57,38 @@ matter because timing *is* the deliverable:
 - the Arm numbers will be measured on an otherwise-idle board with thread pinning, and the
   conditions reported alongside them.
 
-### Pending — the actual deliverable
+### YOLO26n on Arm — measured
 
-| Backend | Precision | Pi 4 (A72) | Pi 5 (A76) | A76 / A72 |
-|---|---|---|---|---|
-| ONNX Runtime | fp32 | — | — | — |
-| ONNX Runtime | int8 | — | — | — |
-| ExecuTorch + KleidiAI | fp32 | — | — | — |
-| ExecuTorch + KleidiAI | int8 | — | — | — |
-| *+ camera scheduling* | — | — | — | — |
+One 320×320 forward pass of the same artifact (`drone_yolo26n_v4.onnx`, sha `7acd721e718a`),
+ONNX Runtime 1.28, `CPUExecutionProvider`, spin-wait disabled. Regenerate with
+`python -m bench.report`.
+
+| Board | Core | dotprod | Precision | Threads | Inference ms | inf/s |
+|---|---|---|---|---|---|---|
+| Pi 4 Model B | Cortex-A72 | **no** | fp32 | 1 | 205.4 | 4.8 |
+| Pi 4 Model B | Cortex-A72 | **no** | fp32 | 4 | **93.7** | 10.4 |
+| x86-64 desktop | — | n/a | fp32 | 1 | 12.0 | 78.2 |
+| x86-64 desktop | — | n/a | fp32 | 4 | 5.1 | 171.2 |
+
+- **Pi 4 is 18.4× slower** than the desktop at the same thread count.
+- **Thread scaling is 2.19×, not 4×** — the kernel is memory-bound, so cores are not the
+  lever. Four cameras at 93.7 ms each is 375 ms per fix, or 2.7 Hz: too slow to close a
+  loop, which is the problem the rest of the work exists to solve.
+- **Accuracy is architecture-independent**: 36.42 mm 3D error on the Pi, identical to the
+  desktop to the last digit. Same weights, same codec, same corpus.
+
+Still pending: int8 (a raw-head re-export is needed first — see below), the Pi 5 column,
+and ExecuTorch + KleidiAI.
+
+| | Pi 4 (A72) | Pi 5 (A76) |
+|---|---|---|
+| ONNX Runtime int8 | pending | pending |
+| ExecuTorch + KleidiAI int8 | n/a — no dotprod | pending |
+| *+ camera scheduling* | pending | pending |
+
+**The Pi 4 has no `asimddp`** — verified on the board, not assumed:
+`Features : fp asimd evtstrm crc32 cpuid`. So int8 there gets NEON only and KleidiAI's
+SDOT kernels never engage. That is the measurement the Pi 5 column exists to contrast with.
 
 ## Architecture
 
@@ -125,7 +147,7 @@ project, and a test enforces it by parsing every module.
 ```bash
 git clone https://github.com/SCAI-Engineering/dronevision-ai.git && cd dronevision-ai
 pip install -e ".[pi]"        # numpy, opencv, pyyaml, pyzmq, onnxruntime
-pytest                        # 153 tests, no hardware needed
+pytest                        # 191 tests, no hardware needed
 ```
 
 Extras: `net` (transport) · `ort` (ONNX Runtime) · `torch` (reference backend + export) ·
@@ -137,9 +159,21 @@ Extras: `net` (transport) · `ort` (ONNX Runtime) · `torch` (reference backend 
 
 ```bash
 py -m bench.accuracy                       # accuracy + per-stage timing
+py -m bench.accuracy --detector yolo --runtime onnx --threads 4
 py -m bench.accuracy --occlude cam_ne,cam_sw
 py -m bench.accuracy --mode encoded        # include JPEG decode in the timing
+py -m bench.speed --runtime onnx --threads 4 --json bench/out/pc.json
+py -m bench.report                         # render the results table
 py -m dronevision.service --replay data/corpus
+```
+
+**On a Raspberry Pi**, driven from this machine — the board needs no GitHub access:
+
+```bash
+./bench/pi.sh info      # board, cores, CPU features, temperature
+./bench/pi.sh setup     # ship the tree, build the venv, install deps
+./bench/pi.sh bench     # sweep, then pull the JSON back here
+./bench/pi.sh run -m bench.accuracy --detector yolo --runtime onnx --threads 4
 ```
 
 **Live**, against the simulator:
