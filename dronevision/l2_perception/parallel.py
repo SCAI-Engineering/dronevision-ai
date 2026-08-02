@@ -115,6 +115,34 @@ class ParallelPerception:
                 out[cam] = uv
         return out
 
+    def worker_stats(self):
+        """Per-worker mean stage times, and what they imply about the bottleneck.
+
+        This is the diagnostic that separates the two reasons camera-parallelism can
+        underperform, which have opposite remedies:
+
+          * each worker's own inference stays fast but the wall time does not fall —
+            the work is not overlapping, so something is serializing it (the GIL), and
+            processes would help.
+          * each worker's inference slows down by roughly the worker count — the work IS
+            overlapping but contending for a shared resource, almost always memory
+            bandwidth on a single-channel SoC. Processes would change nothing.
+        """
+        out = {}
+        for cam, d in self.detectors.items():
+            rt = getattr(d, "runtime", None)
+            if rt is not None and getattr(rt, "stats", None) and rt.stats.n:
+                out[cam] = {"n": rt.stats.n, **{k: round(v, 3)
+                                                for k, v in rt.stats.means().items()}}
+        return out
+
+    def reset_stats(self):
+        for d in self.detectors.values():
+            rt = getattr(d, "runtime", None)
+            if rt is not None:
+                from dronevision.l2_perception.runtimes.base import Stats
+                rt.stats = Stats()
+
     def describe(self):
         first = next(iter(self.detectors.values()), None)
         d = dict(first.describe()) if hasattr(first, "describe") else {}

@@ -134,7 +134,14 @@ def main(argv=None):
             run = par.detect_all
             closer = par.close
 
+        if workers > 1:
+            par.reset_stats()          # exclude warmup from the per-worker means
         per_fix, found = time_strategy(run, framesets, a.iters, a.warmup)
+        worker_ms = par.worker_stats() if workers > 1 else {}
+        if workers == 1 and getattr(det, "runtime", None):
+            worker_ms = {"(single)": {"n": det.runtime.stats.n,
+                                      **{k: round(v, 3)
+                                         for k, v in det.runtime.stats.means().items()}}}
         closer()
         temp1, mhz1 = cpu_temp_c(), cpu_mhz()
 
@@ -145,10 +152,15 @@ def main(argv=None):
             "ms_per_fix": s, "fix_hz": round(1000.0 / s["mean"], 2),
             "ms_per_camera": round(s["mean"] / len(cams), 2),
             "detections_per_fix": round(float(np.mean(found)), 2),
+            "worker_stages_ms": worker_ms,
             "thermal": {"temp_before_c": temp0, "temp_after_c": temp1,
                         "mhz_before": mhz0, "mhz_after": mhz1},
         })
-        print(f"{s['mean']:7.1f} ms/fix   {rows[-1]['fix_hz']:5.2f} Hz")
+        infers = [v.get("infer_ms", 0) for v in worker_ms.values()]
+        rows[-1]["mean_worker_infer_ms"] = round(float(np.mean(infers)), 2) if infers else None
+        print(f"{s['mean']:7.1f} ms/fix   {rows[-1]['fix_hz']:5.2f} Hz"
+              + (f"   (each worker's own infer: {np.mean(infers):.0f} ms)"
+                 if infers else ""))
 
     print()
     print("%-18s %8s %10s %8s %9s %8s" % ("strategy", "cores", "ms/fix", "Hz",
