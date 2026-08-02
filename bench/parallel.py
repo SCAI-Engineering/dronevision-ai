@@ -78,6 +78,12 @@ def main(argv=None):
                          "measures pure scaling: N cores doing N independent "
                          "inferences, which is where a shared-bandwidth ceiling shows "
                          "itself as per-worker slowdown rather than as a wall-time win")
+    ap.add_argument("--repeat", type=int, default=1,
+                    help="measure every configuration this many times, INTERLEAVED. "
+                         "A single pass of a few dozen frames varies by tens of "
+                         "percent run to run, and configurations measured one after "
+                         "another also pick up drift; interleaving and taking the best "
+                         "of several passes removes both")
     ap.add_argument("--json", default=None)
     a = ap.parse_args(argv)
 
@@ -115,9 +121,17 @@ def main(argv=None):
                 continue
             configs.append((workers, max(1, cores // workers)))
 
+    # Build every runner up front so that repeats interleave without paying for engine
+    # construction each time, and so that no configuration is advantaged by running
+    # while the caches happen to be warm from its own previous pass.
+    passes = {}
     rows = []
-    for workers, tpw in configs:
+    for rep in range(a.repeat):
+      for workers, tpw in configs:
+        key = (workers, tpw)
         label = ("sequential" if workers == 1 else f"parallel x{workers}")
+        if a.repeat > 1:
+            print(f"  [pass {rep + 1}/{a.repeat}] ", end="")
         print(f"  {label:<16} {workers} worker(s) x {tpw} thread(s) "
               f"= {workers * tpw} of {cores} cores ... ", end="", flush=True)
 
@@ -155,31 +169,50 @@ def main(argv=None):
         temp1, mhz1 = cpu_temp_c(), cpu_mhz()
 
         s = summarize(per_fix)
-        rows.append({
+        infers = [v.get("infer_ms", 0) for v in worker_ms.values()]
+        passes.setdefault(key, []).append({
             "label": label, "workers": workers, "threads_per_worker": tpw,
             "cores_used": workers * tpw,
             "ms_per_fix": s, "fix_hz": round(1000.0 / s["mean"], 2),
             "ms_per_camera": round(s["mean"] / len(cams), 2),
             "detections_per_fix": round(float(np.mean(found)), 2),
             "worker_stages_ms": worker_ms,
+            "mean_worker_infer_ms": round(float(np.mean(infers)), 2) if infers else None,
             "thermal": {"temp_before_c": temp0, "temp_after_c": temp1,
                         "mhz_before": mhz0, "mhz_after": mhz1},
         })
-        infers = [v.get("infer_ms", 0) for v in worker_ms.values()]
-        rows[-1]["mean_worker_infer_ms"] = round(float(np.mean(infers)), 2) if infers else None
-        print(f"{s['mean']:7.1f} ms/fix   {rows[-1]['fix_hz']:5.2f} Hz"
+        print(f"{s['mean']:7.1f} ms/fix   {1000.0 / s['mean']:5.2f} Hz"
               + (f"   (each worker's own infer: {np.mean(infers):.0f} ms)"
                  if infers else ""))
 
+    # Best of the passes, not the mean. A latency measurement is contaminated upward by
+    # anything else the machine did; the fastest pass is the one least interfered with,
+    # and the spread across passes is reported so a small difference between two
+    # configurations can be recognised as noise rather than read as a result.
+    for key, got in passes.items():
+        best = min(got, key=lambda r: r["ms_per_fix"]["mean"])
+        best = dict(best)
+        means = [r["ms_per_fix"]["mean"] for r in got]
+        best["passes"] = len(got)
+        best["pass_means_ms"] = [round(m, 1) for m in means]
+        best["pass_spread_pct"] = (round(100 * (max(means) - min(means)) / min(means), 1)
+                                   if len(means) > 1 else 0.0)
+        rows.append(best)
+    rows.sort(key=lambda r: (r["workers"], r["threads_per_worker"]))
+
     print()
-    print("%-18s %8s %10s %8s %9s %8s" % ("strategy", "cores", "ms/fix", "Hz",
-                                          "ms/cam", "vs seq"))
+    print("%-10s %6s %10s %7s %9s %8s %8s %7s"
+          % ("strategy", "cores", "ms/fix", "Hz", "worker ms", "vs seq", "eff", "+/-"))
     base = next((r for r in rows if r["workers"] == 1), None)
     for r in rows:
         gain = (base["ms_per_fix"]["mean"] / r["ms_per_fix"]["mean"]) if base else 1.0
-        print("%-18s %8d %10.1f %8.2f %9.1f %7.2fx"
+        # Efficiency against the ideal: N workers should be N times faster than one.
+        eff = 100.0 * gain / r["workers"] if base else 100.0
+        print("%-10s %6d %10.1f %7.2f %9s %7.2fx %7.0f%% %6.0f%%"
               % (f"{r['workers']}x{r['threads_per_worker']}t", r["cores_used"],
-                 r["ms_per_fix"]["mean"], r["fix_hz"], r["ms_per_camera"], gain))
+                 r["ms_per_fix"]["mean"], r["fix_hz"],
+                 f"{r['mean_worker_infer_ms']:.0f}" if r["mean_worker_infer_ms"] else "-",
+                 gain, eff, r.get("pass_spread_pct", 0)))
 
     best = min(rows, key=lambda r: r["ms_per_fix"]["mean"])
     print()
