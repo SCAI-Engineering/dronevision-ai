@@ -107,9 +107,20 @@ time would not improve at all. It is memory bandwidth, on a single-channel LPDDR
 
 Three consequences:
 
-- **Multiprocessing would not help.** The usual reason to reach for it is the GIL, and the
-  GIL is not the constraint here. ONNX Runtime releases it during inference, and the
-  measurement confirms the overlap. Processes would add frame pickling for nothing.
+- **Multiprocessing is measurably worse**, not merely unnecessary. Both backends are
+  implemented and measured (`--backends thread,process`):
+
+  | backend | 4 workers × 1 thread | vs threads |
+  |---|---|---|
+  | thread | **319.9 ms** | — |
+  | process | 358.7 ms | **12% slower** |
+
+  The usual reason to reach for processes is the GIL, and the GIL is not the constraint:
+  ONNX Runtime releases it during inference, so threads already overlap. What processes
+  add is a 691 KB frame pickled down a pipe per camera — 2.8 MB of extra copying per fix
+  on a board whose bottleneck is *already* memory traffic. Each process worker's own
+  inference is slower too (330 ms against 309 ms), which is the same bus contention
+  showing up again. Adding memory traffic to a memory-bound workload makes it worse.
 - **The 3-worker row is worse than the 2-worker row** because four cameras do not divide
   by three: one worker does two inferences and the fix waits for it. Worker count should
   divide the camera count.
