@@ -85,10 +85,19 @@ class LocalizationPipeline:
         return [c for c in self.cams if c not in self.occlude]
 
     def detect(self, frames):
-        """``{cam: rgb}`` -> ``{cam: (u, v)}``, one detection per camera."""
+        """``{cam: rgb}`` -> ``{cam: (u, v)}``, one detection per camera.
+
+        Delegates wholesale when the detector can handle the whole set itself — that is
+        how camera-parallel perception plugs in without the pipeline knowing about
+        threads or cores.
+        """
+        active = {c: frames.get(c) for c in self.active_cams}
+        detect_all = getattr(self.detector, "detect_all", None)
+        if detect_all is not None:
+            return detect_all({c: img for c, img in active.items() if img is not None})
+
         dets = {}
-        for cam in self.active_cams:
-            img = frames.get(cam)
+        for cam, img in active.items():
             if img is None:
                 continue
             px = self.detector.detect(img, cam=cam)
