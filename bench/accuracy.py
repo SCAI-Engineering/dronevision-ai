@@ -86,6 +86,8 @@ def main(argv=None):
     ap.add_argument("--imgsz", type=int, default=320,
                     help="network input size; must match across runtimes or the "
                          "comparison measures different amounts of work")
+    ap.add_argument("--parallel", type=int, nargs="?", const=-1, default=None,
+                    metavar="N", help="detect on N cameras concurrently")
     ap.add_argument("--mode", default="decoded", help="decoded | encoded | stream")
     ap.add_argument("-n", "--samples", type=int, default=200, help="live only")
     ap.add_argument("--interval", type=float, default=0.05, help="live only")
@@ -104,7 +106,14 @@ def main(argv=None):
     det_kw = {}
     if a.detector in ("yolo", "hybrid"):
         det_kw = {"runtime": a.runtime, "threads": a.threads, "imgsz": a.imgsz}
-    detector = make_detector(a.detector, **det_kw)
+    if a.parallel is not None:
+        from dronevision.l2_perception.parallel import make_parallel
+        detector = make_parallel(
+            site.cam_names, detector=a.detector,
+            workers=None if a.parallel < 0 else a.parallel,
+            **{k: v for k, v in det_kw.items() if k != "threads"})
+    else:
+        detector = make_detector(a.detector, **det_kw)
     occlude = [c for c in a.occlude.split(",") if c]
     pipe = LocalizationPipeline(cal=site, detector=detector,
                                 smoother=EMASmoother(a.alpha),

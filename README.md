@@ -77,6 +77,53 @@ ONNX Runtime 1.28, `CPUExecutionProvider`, spin-wait disabled. Regenerate with
 - **Accuracy is architecture-independent**: 36.42 mm 3D error on the Pi, identical to the
   desktop to the last digit. Same weights, same codec, same corpus.
 
+### Optimization 1 — multi-core parallelism
+
+A fix needs all four cameras. Four cores can be spent two ways, and they are not
+equivalent: split one image across all cores, or give each core a whole image and a
+single-threaded engine. Measured on the Pi 4, three interleaved passes of 20 fixes each,
+best pass taken (`python -m bench.parallel --iters 20 --repeat 3`):
+
+| Strategy | ms per fix | Hz | per-worker inference | vs sequential |
+|---|---|---|---|---|
+| 1 worker × 4 threads | 376.6 | 2.66 | 92 ms | 1.00× |
+| 2 workers × 2 threads | 345.8 | 2.89 | 168 ms | 1.09× |
+| **4 workers × 1 thread** | **322.5** | **3.10** | 311 ms | **1.17×** |
+
+**1.17×, not the ~3× a core count suggests.** The reason is in the per-worker column, and
+it is the most useful thing measured so far. Scaling the worker count with one thread each:
+
+| workers | wall ms/fix | speedup | efficiency | per-worker inference |
+|---|---|---|---|---|
+| 1 | 828.6 | 1.00× | 100% | 205 ms |
+| 2 | 466.1 | 1.78× | 89% | 229 ms |
+| 3 | 476.6 | 1.74× | 58% | 252 ms |
+| 4 | 321.5 | 2.58× | 64% | 311 ms |
+
+Each added worker makes *every* worker slower — 205 → 311 ms — while wall time still
+falls. So the work genuinely overlaps and something shared is saturating. It is not the
+GIL: under lock contention each worker's own inference would stay at 205 ms and the wall
+time would not improve at all. It is memory bandwidth, on a single-channel LPDDR4 SoC.
+
+Three consequences:
+
+- **Multiprocessing would not help.** The usual reason to reach for it is the GIL, and the
+  GIL is not the constraint here. ONNX Runtime releases it during inference, and the
+  measurement confirms the overlap. Processes would add frame pickling for nothing.
+- **The 3-worker row is worse than the 2-worker row** because four cameras do not divide
+  by three: one worker does two inferences and the fix waits for it. Worker count should
+  divide the camera count.
+- **This reorders the remaining optimizations.** If the bottleneck is bytes moved rather
+  than cores available, then int8 (4× less weight traffic), lower input resolution and
+  ROI cropping are the primary levers — not more parallelism. Quantization stops being
+  "modest on a core without dotprod" and becomes the main event.
+
+Accuracy is unchanged by any of this: **36.42 mm either way**, to the digit.
+
+```bash
+python -m dronevision.service --detector yolo --runtime onnx --parallel
+```
+
 Still pending: int8 (a raw-head re-export is needed first — see below), the Pi 5 column,
 and ExecuTorch + KleidiAI.
 
