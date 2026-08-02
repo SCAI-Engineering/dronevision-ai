@@ -26,6 +26,13 @@ and a correctness bug. One detector per camera makes the state naturally private
 import os
 from concurrent.futures import ThreadPoolExecutor
 
+# Safe at module scope: `_procworker` imports only the standard library until a worker
+# actually starts, so this does not pull an inference runtime into the parent.
+from dronevision.l2_perception._procworker import (
+    detect_in_worker as _detect_in_worker,
+    init_worker as _init_worker,
+)
+
 DEFAULT_BACKEND = "thread"
 
 
@@ -62,32 +69,80 @@ class ParallelPerception:
             threads_per_worker if threads_per_worker is not None
             else _worker_threads(self.workers, total_threads))
 
-        if backend == "process":
-            raise NotImplementedError(
-                "the process backend is not implemented: ONNX Runtime releases the GIL "
-                "during inference, so threads already overlap and cost nothing to feed, "
-                "whereas processes would pickle every frame across a pipe. Measure with "
-                "bench/parallel.py before reaching for it.")
-        if backend != "thread":
-            raise ValueError(f"unknown backend {backend!r}; expected 'thread'")
+        if backend not in ("thread", "process"):
+            raise ValueError(
+                f"unknown backend {backend!r}; expected 'thread' or 'process'")
 
-        # Built eagerly and in series: each one loads weights and runs a warmup, and
-        # doing that concurrently would contend for exactly the cores being measured.
-        self.detectors = {c: factory(c, self.threads_per_worker) for c in self.cams}
-        self._pool = ThreadPoolExecutor(max_workers=self.workers,
-                                        thread_name_prefix="detect")
+        self._procs = None
+        self._proc_stats = {}
+        self.detectors = {}
+        if backend == "process":
+            self._start_processes(factory)
+            self._pool = None
+        else:
+            # Built eagerly and in series: each one loads weights and runs a warmup, and
+            # doing that concurrently would contend for exactly the cores being measured.
+            self.detectors = {c: factory(c, self.threads_per_worker) for c in self.cams}
+            self._pool = ThreadPoolExecutor(max_workers=self.workers,
+                                            thread_name_prefix="detect")
+
+    def _start_processes(self, factory):
+        """One single-worker pool per camera.
+
+        Not one pool of N workers: a pool hands a task to whichever worker is free, so a
+        camera's frames would land in different processes run to run. That breaks the
+        motion and hybrid detectors, whose background model is per-camera state, and it
+        costs cache locality even for the stateless ones. A dedicated worker per camera
+        reproduces exactly the affinity the thread backend gets for free.
+        """
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor
+
+        spec = getattr(factory, "worker_spec", None)
+        if spec is None:
+            raise ValueError(
+                "the process backend needs a picklable description of the detector, "
+                "not a factory closure: a spawned worker re-imports the code in a fresh "
+                "interpreter and cannot receive a local function. Use make_parallel(), "
+                "which attaches `worker_spec`.")
+        detector_name, kwargs = spec
+        kwargs = dict(kwargs or {})
+        kwargs["threads"] = self.threads_per_worker
+
+        ctx = mp.get_context("spawn")
+        self._procs = {}
+        for cam in self.cams:
+            self._procs[cam] = ProcessPoolExecutor(
+                max_workers=1, mp_context=ctx,
+                initializer=_init_worker, initargs=(cam, detector_name, kwargs))
+        # Force each interpreter to start and warm up now, so process creation is not
+        # charged to the first measured frame.
+        import numpy as np
+        blank = np.zeros((8, 8, 3), np.uint8)
+        for cam, pool in self._procs.items():
+            pool.submit(_detect_in_worker, blank).result()
 
     @property
     def name(self):
         first = next(iter(self.detectors.values()), None)
-        return f"parallel[{self.workers}x{self.threads_per_worker}t]/" + (
-            getattr(first, "name", "?"))
+        tag = "proc" if self._procs is not None else "thread"
+        base = getattr(first, "name", None) or getattr(self, "_detector_name", "?")
+        return f"parallel-{tag}[{self.workers}x{self.threads_per_worker}t]/{base}"
 
     @property
     def target_offset_key(self):
-        """Inherited from the wrapped detectors; they are all the same kind."""
+        """Inherited from the wrapped detectors; they are all the same kind.
+
+        With process workers the detector lives in another interpreter, so this comes
+        from the class rather than an instance — getting it wrong would bias every
+        altitude, so it is looked up rather than defaulted.
+        """
         first = next(iter(self.detectors.values()), None)
-        return getattr(first, "target_offset_key", None)
+        if first is not None:
+            return getattr(first, "target_offset_key", None)
+        from dronevision.l2_perception.detector import BACKENDS
+        cls = BACKENDS.get(getattr(self, "_detector_name", None))
+        return getattr(cls, "target_offset_key", None) if cls else None
 
     def detect(self, img_rgb, cam=None):
         """Single-camera path, so this can stand in for a plain detector."""
@@ -96,6 +151,9 @@ class ParallelPerception:
 
     def detect_all(self, frames):
         """``{cam: rgb}`` -> ``{cam: (u, v)}``, computed concurrently."""
+        if self._procs is not None:
+            return self._detect_all_processes(frames)
+
         work = [(c, img) for c, img in frames.items()
                 if img is not None and c in self.detectors]
         if not work:
@@ -115,6 +173,25 @@ class ParallelPerception:
                 out[cam] = uv
         return out
 
+    def _detect_all_processes(self, frames):
+        """Same contract, but each frame is pickled across a pipe to its worker.
+
+        That transfer is a genuine cost of this backend and is deliberately included in
+        the timing: it is what you pay to escape the GIL, and the comparison is only
+        honest if it is charged.
+        """
+        futures = {}
+        for cam, img in frames.items():
+            if img is not None and cam in self._procs:
+                futures[cam] = self._procs[cam].submit(_detect_in_worker, img)
+        out = {}
+        for cam, fut in futures.items():
+            uv, timings = fut.result()
+            self._proc_stats.setdefault(cam, []).append(timings)
+            if uv:
+                out[cam] = uv
+        return out
+
     def worker_stats(self):
         """Per-worker mean stage times, and what they imply about the bottleneck.
 
@@ -128,6 +205,17 @@ class ParallelPerception:
             overlapping but contending for a shared resource, almost always memory
             bandwidth on a single-channel SoC. Processes would change nothing.
         """
+        if self._procs is not None:
+            out = {}
+            for cam, rows in self._proc_stats.items():
+                if not rows:
+                    continue
+                keys = {k for r in rows for k in r}
+                out[cam] = {"n": len(rows)}
+                out[cam].update({k: round(sum(r.get(k, 0.0) for r in rows) / len(rows), 3)
+                                 for k in sorted(keys)})
+            return out
+
         out = {}
         for cam, d in self.detectors.items():
             rt = getattr(d, "runtime", None)
@@ -137,6 +225,7 @@ class ParallelPerception:
         return out
 
     def reset_stats(self):
+        self._proc_stats = {}
         for d in self.detectors.values():
             rt = getattr(d, "runtime", None)
             if rt is not None:
@@ -155,6 +244,11 @@ class ParallelPerception:
         return d
 
     def close(self):
+        if self._procs is not None:
+            for pool in self._procs.values():
+                pool.shutdown(wait=True)
+            self._procs = None
+            return
         self._pool.shutdown(wait=True)
         for d in self.detectors.values():
             rt = getattr(d, "runtime", None)
@@ -170,8 +264,13 @@ class ParallelPerception:
 
 
 def make_parallel(cams, detector="yolo", workers=None, backend=DEFAULT_BACKEND,
-                  total_threads=None, **detector_kw):
-    """Convenience: one detector per camera, threads divided among the workers."""
+                  total_threads=None, threads_per_worker=None, **detector_kw):
+    """Convenience: one detector per camera, threads divided among the workers.
+
+    `threads_per_worker` must be passed HERE, not set on the returned object: the engines
+    are constructed during __init__, so assigning it afterwards relabels the
+    configuration without changing what ran.
+    """
     from dronevision.l2_perception.detector import make_detector
 
     def factory(cam, threads):
@@ -180,5 +279,12 @@ def make_parallel(cams, detector="yolo", workers=None, backend=DEFAULT_BACKEND,
             kw["threads"] = threads
         return make_detector(detector, **kw)
 
-    return ParallelPerception(cams, factory, workers=workers, backend=backend,
-                              total_threads=total_threads)
+    # The process backend cannot receive a closure: a spawned worker re-imports the
+    # code in a fresh interpreter. Carry a picklable description alongside it.
+    factory.worker_spec = (detector, dict(detector_kw))
+
+    par = ParallelPerception(cams, factory, workers=workers, backend=backend,
+                             total_threads=total_threads,
+                             threads_per_worker=threads_per_worker)
+    par._detector_name = detector
+    return par

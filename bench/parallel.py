@@ -78,6 +78,11 @@ def main(argv=None):
                          "measures pure scaling: N cores doing N independent "
                          "inferences, which is where a shared-bandwidth ceiling shows "
                          "itself as per-worker slowdown rather than as a wall-time win")
+    ap.add_argument("--backends", default="thread",
+                    help="comma separated: thread,process. Measuring both settles "
+                         "whether the GIL is the constraint - if it is, processes win; "
+                         "if the memory bus is, they cannot, and the frame pickling "
+                         "they add makes them slightly worse")
     ap.add_argument("--repeat", type=int, default=1,
                     help="measure every configuration this many times, INTERLEAVED. "
                          "A single pass of a few dozen frames varies by tens of "
@@ -111,15 +116,21 @@ def main(argv=None):
 
     # Splits worth measuring: all cores on one image at a time, through to one core per
     # camera. Intermediate splits catch the case where neither extreme is best.
+    backends = [b.strip() for b in a.backends.split(",") if b.strip()]
     configs = []
     if a.fixed_threads:
-        for workers in range(1, len(cams) + 1):
-            configs.append((workers, a.fixed_threads))
+        counts = list(range(1, len(cams) + 1))
     else:
-        for workers in sorted({1, 2, len(cams), cores}):
-            if workers < 1 or workers > len(cams):
+        counts = [w for w in sorted({1, 2, len(cams), cores})
+                  if 1 <= w <= len(cams)]
+    for workers in counts:
+        tpw = a.fixed_threads or max(1, cores // workers)
+        for b in backends:
+            # A single worker is sequential by definition; running it in a child
+            # process would only measure the pipe.
+            if workers == 1 and b != backends[0]:
                 continue
-            configs.append((workers, max(1, cores // workers)))
+            configs.append((workers, tpw, b))
 
     # Build every runner up front so that repeats interleave without paying for engine
     # construction each time, and so that no configuration is advantaged by running
@@ -127,9 +138,10 @@ def main(argv=None):
     passes = {}
     rows = []
     for rep in range(a.repeat):
-      for workers, tpw in configs:
-        key = (workers, tpw)
-        label = ("sequential" if workers == 1 else f"parallel x{workers}")
+      for workers, tpw, backend in configs:
+        key = (workers, tpw, backend)
+        label = ("sequential" if workers == 1
+                 else f"{backend[:4]} x{workers}")
         if a.repeat > 1:
             print(f"  [pass {rep + 1}/{a.repeat}] ", end="")
         print(f"  {label:<16} {workers} worker(s) x {tpw} thread(s) "
@@ -148,12 +160,10 @@ def main(argv=None):
                 return out
             closer = getattr(getattr(det, "runtime", None), "close", lambda: None)
         else:
-            par = ParallelPerception(
-                cams,
-                lambda cam, th: make_detector(a.detector,
-                                              **({"threads": th, **det_kw}
-                                                 if det_kw else {})),
-                workers=workers, threads_per_worker=tpw)
+            from dronevision.l2_perception.parallel import make_parallel
+            par = make_parallel(cams, detector=a.detector, workers=workers,
+                                backend=backend, threads_per_worker=tpw,
+                                **{k: v for k, v in det_kw.items() if k != "threads"})
             run = par.detect_all
             closer = par.close
 
@@ -172,7 +182,7 @@ def main(argv=None):
         infers = [v.get("infer_ms", 0) for v in worker_ms.values()]
         passes.setdefault(key, []).append({
             "label": label, "workers": workers, "threads_per_worker": tpw,
-            "cores_used": workers * tpw,
+            "backend": backend, "cores_used": workers * tpw,
             "ms_per_fix": s, "fix_hz": round(1000.0 / s["mean"], 2),
             "ms_per_camera": round(s["mean"] / len(cams), 2),
             "detections_per_fix": round(float(np.mean(found)), 2),
@@ -198,18 +208,19 @@ def main(argv=None):
         best["pass_spread_pct"] = (round(100 * (max(means) - min(means)) / min(means), 1)
                                    if len(means) > 1 else 0.0)
         rows.append(best)
-    rows.sort(key=lambda r: (r["workers"], r["threads_per_worker"]))
+    rows.sort(key=lambda r: (r["workers"], r["threads_per_worker"], r["backend"]))
 
     print()
-    print("%-10s %6s %10s %7s %9s %8s %8s %7s"
+    print("%-14s %6s %10s %7s %9s %8s %8s %7s"
           % ("strategy", "cores", "ms/fix", "Hz", "worker ms", "vs seq", "eff", "+/-"))
     base = next((r for r in rows if r["workers"] == 1), None)
     for r in rows:
         gain = (base["ms_per_fix"]["mean"] / r["ms_per_fix"]["mean"]) if base else 1.0
         # Efficiency against the ideal: N workers should be N times faster than one.
         eff = 100.0 * gain / r["workers"] if base else 100.0
-        print("%-10s %6d %10.1f %7.2f %9s %7.2fx %7.0f%% %6.0f%%"
-              % (f"{r['workers']}x{r['threads_per_worker']}t", r["cores_used"],
+        print("%-14s %6d %10.1f %7.2f %9s %7.2fx %7.0f%% %6.0f%%"
+              % (f"{r['backend'][:4]} {r['workers']}x{r['threads_per_worker']}t",
+                 r["cores_used"],
                  r["ms_per_fix"]["mean"], r["fix_hz"],
                  f"{r['mean_worker_infer_ms']:.0f}" if r["mean_worker_infer_ms"] else "-",
                  gain, eff, r.get("pass_spread_pct", 0)))
