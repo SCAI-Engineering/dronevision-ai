@@ -72,6 +72,12 @@ def main(argv=None):
     ap.add_argument("--iters", type=int, default=25)
     ap.add_argument("--warmup", type=int, default=5)
     ap.add_argument("--cores", type=int, default=None, help="default: all")
+    ap.add_argument("--fixed-threads", type=int, default=None,
+                    help="give every worker this many threads and sweep the worker "
+                         "count instead of dividing a fixed budget. With 1, this "
+                         "measures pure scaling: N cores doing N independent "
+                         "inferences, which is where a shared-bandwidth ceiling shows "
+                         "itself as per-worker slowdown rather than as a wall-time win")
     ap.add_argument("--json", default=None)
     a = ap.parse_args(argv)
 
@@ -100,11 +106,14 @@ def main(argv=None):
     # Splits worth measuring: all cores on one image at a time, through to one core per
     # camera. Intermediate splits catch the case where neither extreme is best.
     configs = []
-    for workers in sorted({1, 2, len(cams), cores}):
-        if workers < 1 or workers > len(cams):
-            continue
-        tpw = max(1, cores // workers)
-        configs.append((workers, tpw))
+    if a.fixed_threads:
+        for workers in range(1, len(cams) + 1):
+            configs.append((workers, a.fixed_threads))
+    else:
+        for workers in sorted({1, 2, len(cams), cores}):
+            if workers < 1 or workers > len(cams):
+                continue
+            configs.append((workers, max(1, cores // workers)))
 
     rows = []
     for workers, tpw in configs:
