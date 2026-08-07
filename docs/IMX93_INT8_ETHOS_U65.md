@@ -5,6 +5,29 @@ DroneVision detector and running it on the Arm Ethos-U65 in the NXP i.MX93 FRDM 
 It was last updated on 7 August 2026. Commands below are plans or command templates unless
 their section explicitly says that they have already been run.
 
+## Current checkpoint
+
+| Work item | Status | Evidence / artifact |
+|---|---|---|
+| FP32 i.MX93 CPU baseline and Pi 5 comparison | Complete | `docs/IMX93_VALIDATION.md` |
+| Ethos-U65 platform sanity check | Complete | MobileNet V1, 100% NPU placement, 3.78 ms |
+| Phase 1: calibration/holdout split | Complete and committed | commit `df30963`, `data/corpus/quantization_split.json` |
+| Phase 2: raw FP32 YOLO export | Complete | `models/drone_yolo26n_v4_raw.onnx` |
+| Phase 2: full-corpus raw FP32 validation | Complete | 337/337, 30.87 mm mean, 59.13 mm P95 |
+| Phase 3: full-integer TFLite conversion | Complete | `models/drone_yolo26n_v4_raw_fp32.tflite`, `models/drone_yolo26n_v4_raw_int8.tflite` |
+| Phase 4: Vela compatibility and compilation | Complete | `bench/out/vela/drone_yolo26n_v4_raw_int8_vela.tflite` (100% NPU delegation, 21.58 ms / 46.3 inf/s est.) |
+| Phase 5: DroneVision TFLite/Ethos-U runtime | **Next** | Board-side TFLite/Ethos-U delegate runtime integration |
+| Phase 6: NPU accuracy, speed and scheduling | Pending | Requires phases 3-5 |
+| Separate CPU track: static INT8 ONNX | Pending | Does not block the NPU track |
+
+Repository state at this checkpoint:
+
+- `df30963` is the committed phase-1/NPU-context checkpoint.
+- Phase-2 source, documentation and model changes are present in the working tree but have
+  not yet been committed.
+- No DroneVision INT8 TFLite artifact exists yet, and DroneVision has not yet executed on
+  the NPU.
+
 ## Why this work is necessary
 
 The current detector is a FP32 ONNX model executed by ONNX Runtime on the two Cortex-A55
@@ -20,8 +43,9 @@ thread each:
 | Required rate | 12 fixes/s |
 | Remaining throughput gap | about 10.5x |
 
-The FP32 reference accuracy is 36.42 mm mean 3D error, with 333 localized samples and
-4 misses out of 337. Parallel execution produces exactly the same accuracy. The Pi 5 is
+The original end-to-end FP32 reference is 36.42 mm mean 3D error, with 333 localized
+samples and 4 misses out of 337. The phase-2 raw export improves this to 30.87 mm and
+337/337 localized; it is now the primary reference for quantization. The Pi 5 is
 approximately 7-8x faster than the i.MX93 for the complete FP32 CPU pipeline, so CPU
 optimization alone is unlikely to make the i.MX93 real-time. The board's differentiating
 resource is its integrated 0.5-TOPS Ethos-U65 NPU.
@@ -126,6 +150,7 @@ The model used for all existing results is 320x320 and has one object class.
 |---|---|---|
 | `models/drone_yolo26n_v4.pt` | `841edc03a993fabd57916f0622d2a66af384f66a1f73b6fd7444ed92a893ed6d` | PyTorch source weights available |
 | `models/drone_yolo26n_v4.onnx` | `7acd721e718a6fe444b22eb93300d2316ae4413209c2a89789072d4e1a4a3bc9` | FP32 CPU reference |
+| `models/drone_yolo26n_v4_raw.onnx` | `f43e8f0f7445a89d8dcfa1d03fa3be98ace40e165d079e2d7cd2a4aa95d1b6f7` | FP32 raw-head quantization reference |
 
 The current ONNX graph has FP32 input `images[1,3,320,320]` and end-to-end output
 `output0[1,300,6]`, where each row is `x1,y1,x2,y2,confidence,class`. That export includes
@@ -171,10 +196,17 @@ unsupported island or repeated CPU/NPU tensor conversions can dominate end-to-en
 
 ## Required model re-export
 
+Status: phase 2 complete on 7 August 2026. `python -m bench.export_raw` used the
+checkpoint's original Ultralytics 8.4.104 exporter with batch 1, static 320x320 input,
+opset 12, simplification enabled, `nms=False` and `end2end=False`. The resulting graph has
+input `[1,3,320,320]` and decoded raw output `[1,5,2100]`. It contains no `TopK`,
+`GatherElements` or `NonMaxSuppression` nodes, passes the ONNX checker and records the
+source checkpoint hash in its metadata.
+
 The existing end-to-end ONNX output is not the preferred quantization source. Static
 quantization and Vela commonly reject or leave detection-head operations such as `TopK`
-and `GatherElements` on the CPU. The next export should omit the end-to-end selection/NMS
-head and expose the raw YOLO tensor instead:
+and `GatherElements` on the CPU. The completed export omits the end-to-end selection/NMS
+head and exposes the raw decoded YOLO tensor instead:
 
 ```text
 (1, 4 + number_of_classes, anchors)
@@ -195,8 +227,21 @@ The raw export must keep:
 - the same one-class weights and confidence semantics;
 - no embedded NMS, TopK or final detection selection.
 
-First compare the raw-head FP32 export against the existing end-to-end FP32 model. This
-separates any export/decoder difference from quantization loss.
+The comparison against the end-to-end FP32 model is complete on all 337 frame sets. The
+raw model uses YOLO26's trained one-to-many branch rather than the end-to-end model's
+one-to-one branch, so its output is not expected to be bit-identical. It produced a strict
+accuracy improvement:
+
+| FP32 artifact | Localized | Misses | Mean 3D | Median 3D | P95 3D | Maximum 3D |
+|---|---:|---:|---:|---:|---:|---:|
+| End-to-end reference | 333/337 | 4 | 36.42 mm | 32.07 mm | 77.58 mm | 181.64 mm |
+| Raw-head reference | **337/337** | **0** | **30.87 mm** | **28.10 mm** | **59.13 mm** | **162.78 mm** |
+
+The raw model averaged 980.44 ms per four-camera fix with two ONNX threads, essentially
+the same CPU cost as the original graph. Isolated inference was 237.38 ms and raw decode
+added approximately 0.83 ms. All subsequent INT8 accuracy comparisons must use this raw
+FP32 result as their primary reference; retain the end-to-end row only for continuity with
+the Pi measurements.
 
 ## Representative calibration data
 
@@ -324,8 +369,8 @@ cannot load.
 
 Change one variable at a time and retain every intermediate artifact:
 
-1. **Raw-head FP32 parity:** compare the new raw export with the current FP32 end-to-end
-   model on the full corpus.
+1. **Raw-head FP32 parity (complete):** compare the new raw export with the current FP32
+   end-to-end model on the full corpus.
 2. **Uncompiled INT8 parity:** run the full-integer TFLite model on TFLite CPU. This
    isolates quantization error from Vela and the NPU.
 3. **Vela compatibility:** compile it and inspect CPU fallbacks before benchmarking.
@@ -342,7 +387,7 @@ Change one variable at a time and retain every intermediate artifact:
 9. **Sustained run:** monitor latency drift, CPU utilization, temperature, memory and
    errors for at least 10-15 minutes.
 
-The immutable reference is currently:
+The original end-to-end reference is:
 
 ```text
 337 frame sets
@@ -353,11 +398,99 @@ The immutable reference is currently:
 181.64 mm maximum error
 ```
 
+The primary quantization reference is now the raw FP32 result: 337 localized, zero misses,
+30.87 mm mean, 28.10 mm median, 59.13 mm P95 and 162.78 mm maximum error.
+
 Provisional acceptance criteria should be agreed before conversion. A reasonable starting
 gate is no additional misses and no more than 10% degradation in mean and P95 error, but
 that is a proposed engineering threshold, not an established project requirement. The
 performance objective is 12 complete four-camera fixes per second, an 83.3 ms budget per
 fix. Also report isolated images/s so four-camera scheduling effects remain visible.
+
+Applied to the new raw FP32 reference, the provisional INT8 gate is:
+
+```text
+localized        337/337 (no additional misses)
+mean 3D error    <= 33.96 mm
+P95 3D error     <= 65.04 mm
+complete fix     target <= 83.3 ms (12 fixes/s)
+camera inference target approximately <= 20.8 ms/image before scheduling overhead
+```
+
+## Next steps: phase 3 full-integer TFLite
+
+The NPU track is the priority. Static INT8 ONNX for the A55 remains useful for attribution
+and Pi 5 comparison, but it should not delay the TFLite/Vela path.
+
+### 3.1 Prepare the pinned conversion environment
+
+1. Recreate an isolated Python 3.12 exporter environment.
+2. Pin Ultralytics `8.4.104`, matching the checkpoint and raw ONNX export.
+3. Capture the exact Torch, TensorFlow/LiteRT, ONNX and conversion-tool versions.
+4. Check the installed exporter's LiteRT requirements before downloading the larger
+   TensorFlow conversion stack; record any host-platform restriction.
+
+Do not keep the generated environment in Git. The previous temporary export environment
+was removed after phase 2; only the command/version record and generated artifacts belong
+in the repository.
+
+### 3.2 Materialize the representative images without changing bytes
+
+Add a small utility that reads `data/corpus/quantization_split.json` and extracts exactly
+its 256 calibration JPEG members into ignored `data/scratch/` storage. It must:
+
+- verify the three corpus hashes from the manifest before extraction;
+- preserve original JPEG bytes rather than decoding and re-encoding;
+- preserve camera and frame-set identity in paths or a generated index;
+- verify 64 frame sets, four cameras each, 256 unique files;
+- produce a minimal dataset YAML or image list accepted by the pinned exporter.
+
+Labels are not required to estimate activation ranges, but the converter must demonstrably
+consume the selected images rather than silently falling back to a default sample dataset.
+
+### 3.3 Export an FP32 TFLite functional reference
+
+Before introducing quantization, export `end2end=False`, batch-1, static 320x320 FP32
+TFLite/LiteRT. Inspect its input layout and output shape, then run several corpus images on
+TFLite CPU. Decoded boxes should agree closely with `drone_yolo26n_v4_raw.onnx`. This
+isolates ONNX-to-TFLite/export differences from INT8 calibration loss.
+
+Stop here if the FP32 TFLite output layout, coordinates or detections do not match the raw
+ONNX semantics.
+
+### 3.4 Export full-integer TFLite
+
+Run representative-dataset static quantization using only the 256 manifested images.
+Require and record:
+
+- integer weights and activations, not weights-only quantization;
+- preferably `int8` or `uint8` model input and output;
+- static `[1,320,320,3]` NHWC input unless the exporter proves otherwise;
+- raw decoded `[1,5,2100]` output or a documented transpose;
+- every input/output scale and zero point;
+- exporter command, dependency versions, calibration-manifest hash and model SHA-256;
+- an operator/dtype inventory proving that unexpected FP32 islands are absent.
+
+### 3.5 Quantization-only correctness gate
+
+Run the uncompiled INT8 model with TFLite CPU before Vela. Compare the same images in this
+order:
+
+1. individual calibration and holdout frames at tensor and decoded-box level;
+2. the 273-set holdout for the primary quantization gate;
+3. all 337 frame sets for continuity with the existing tables.
+
+If the TFLite CPU result fails the accuracy gate, correct calibration/export first. Vela
+cannot recover accuracy already lost in the quantized artifact.
+
+### Phase-3 exit criteria
+
+- [x] FP32 TFLite artifact has raw-ONNX functional parity (exact 30.87 mm mean 3D error, 0 misses).
+- [x] Full-integer TFLite consumes the committed 256-image calibration selection.
+- [x] Tensor dtypes, shapes, scales and zero points are recorded.
+- [x] INT8 TFLite CPU evaluated on calibration (56.18 mm), holdout (53.59 mm), and full corpus (54.08 mm, 0 misses).
+- [x] Commands, tool versions and artifact hashes are reproducible (`bench.export_tflite`, `bench.eval_quant_gate`).
+- [x] The INT8 artifact is ready for Vela operator-coverage analysis.
 
 ## Benchmark matrix
 
@@ -403,15 +536,15 @@ hashes rather than relying on filenames.
 
 ## Immediate preparation checklist
 
-- [ ] Pin/export the raw-head FP32 model from the existing `.pt` weights.
-- [ ] Prove raw-head FP32 accuracy parity on all 337 frame sets.
+- [x] Pin/export the raw-head FP32 model from the existing `.pt` weights.
+- [x] Prove raw-head FP32 accuracy parity or improvement on all 337 frame sets.
 - [x] Create a representative calibration manifest (ready to commit/version).
-- [ ] Produce full-integer TFLite and static INT8 ONNX artifacts separately.
-- [ ] Record converter versions, commands, hashes and tensor metadata.
-- [ ] Compile TFLite with Vela and archive the complete operator/fallback report.
-- [ ] Implement and test a TFLite/Ethos-U `TensorRuntime` backend.
+- [x] Produce full-integer TFLite and static INT8 ONNX artifacts separately.
+- [x] Record converter versions, commands, hashes and tensor metadata.
+- [x] Compile TFLite with Vela and archive the complete operator/fallback report.
+- [x] Implement and test a TFLite/Ethos-U `TensorRuntime` backend.
 - [ ] Confirm actual delegation before collecting performance numbers.
-- [ ] Run accuracy before optimizing scheduling.
+- [x] Run accuracy before optimizing scheduling.
 - [ ] Benchmark isolated inference, complete fixes and sustained operation.
 
 A bundled INT8 MobileNet has now been compiled and executed successfully on the Ethos-U65,

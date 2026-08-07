@@ -17,17 +17,20 @@ RUNTIMES = {
                     "UltralyticsRuntime", "torch"),
     "onnx": ("dronevision.l2_perception.runtimes.onnx_rt",
              "OnnxRuntime", "ort"),
+    "tflite": ("dronevision.l2_perception.runtimes.tflite_rt",
+               "TfLiteRuntime", "pi"),
     "executorch": ("dronevision.l2_perception.runtimes.executorch_rt",
                    "ExecuTorchRuntime", "executorch"),
 }
 
 #: Convenience spellings. `torch` and `pt` mean the reference path; `ort` means ONNX.
 ALIASES = {"torch": "ultralytics", "pt": "ultralytics", "yolo": "ultralytics",
-           "ort": "onnx", "onnxruntime": "onnx", "et": "executorch", "pte": "executorch"}
+           "ort": "onnx", "onnxruntime": "onnx", "tflite": "tflite", "litert": "tflite",
+           "et": "executorch", "pte": "executorch"}
 
 #: Which pip extra provides each runtime, for error messages worth reading.
 REQUIRES = {"ultralytics": ("torch", "ultralytics"), "onnx": ("onnxruntime",),
-            "executorch": ("executorch",)}
+            "tflite": ("tflite_runtime",), "executorch": ("executorch",)}
 
 DEFAULT = "ultralytics"
 
@@ -44,18 +47,17 @@ def canonical(name):
 
 
 def available():
-    """``{runtime: importable}`` without importing anything.
-
-    `find_spec` resolves a module without executing it, so this can be called freely from
-    benchmarks and CLIs without putting torch into `sys.modules` and tripping the
-    boundary test.
-    """
+    """``{runtime: importable}`` without importing anything."""
     out = {}
-    for key, mods in REQUIRES.items():
-        try:
-            out[key] = all(importlib.util.find_spec(m) is not None for m in mods)
-        except (ImportError, ValueError):
-            out[key] = False
+    for key in RUNTIMES:
+        if key == "tflite":
+            out[key] = any(importlib.util.find_spec(m) is not None for m in ("ai_edge_litert", "tflite_runtime", "tensorflow"))
+        else:
+            mods = REQUIRES.get(key, ())
+            try:
+                out[key] = all(importlib.util.find_spec(m) is not None for m in mods)
+            except (ImportError, ValueError):
+                out[key] = False
     return out
 
 

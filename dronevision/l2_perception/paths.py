@@ -50,7 +50,7 @@ def default_yolo():
 
 
 #: What each runtime loads. Lets a sweep name one model stem and iterate runtimes.
-RUNTIME_SUFFIX = {"ultralytics": ".pt", "onnx": ".onnx", "executorch": ".pte"}
+RUNTIME_SUFFIX = {"ultralytics": ".pt", "onnx": ".onnx", "tflite": ".tflite", "executorch": ".pte"}
 
 
 def resolve_model(name_or_path, runtime="ultralytics"):
