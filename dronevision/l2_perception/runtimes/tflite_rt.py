@@ -56,6 +56,10 @@ class TfLiteRuntime(InferenceRuntime):
     def __init__(self, model, imgsz=None, threads=None, nc=1, delegate_path=None, **kw):
         super().__init__(model, imgsz=imgsz, threads=threads, **kw)
         self.nc = nc
+        if delegate_path is None:
+            m_str = str(self.model_path).lower()
+            if ("vela" in m_str or "ethosu" in m_str) and Path("/usr/lib/libethosu_delegate.so").exists():
+                delegate_path = "/usr/lib/libethosu_delegate.so"
         self.delegate_path = delegate_path
         self._canvas = None
         self._layout = None

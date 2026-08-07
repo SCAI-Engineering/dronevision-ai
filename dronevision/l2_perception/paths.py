@@ -65,6 +65,8 @@ def resolve_model(name_or_path, runtime="ultralytics"):
 
     if name_or_path:
         p = Path(name_or_path)
+        if p.exists():
+            return p
         if p.suffix:                       # caller named a concrete file
             return model_path(p)
         return model_path(p.with_suffix(suffix))
