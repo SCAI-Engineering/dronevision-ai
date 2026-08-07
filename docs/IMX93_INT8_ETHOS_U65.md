@@ -16,8 +16,8 @@ their section explicitly says that they have already been run.
 | Phase 2: full-corpus raw FP32 validation | Complete | 337/337, 30.87 mm mean, 59.13 mm P95 |
 | Phase 3: full-integer TFLite conversion | Complete | `models/drone_yolo26n_v4_raw_fp32.tflite`, `models/drone_yolo26n_v4_raw_int8.tflite` |
 | Phase 4: Vela compatibility and compilation | Complete | `bench/out/vela/drone_yolo26n_v4_raw_int8_vela.tflite` (100% NPU delegation, 21.58 ms / 46.3 inf/s est.) |
-| Phase 5: DroneVision TFLite/Ethos-U runtime | **Next** | Board-side TFLite/Ethos-U delegate runtime integration |
-| Phase 6: NPU accuracy, speed and scheduling | Pending | Requires phases 3-5 |
+| Phase 5: DroneVision TFLite/Ethos-U runtime | Complete | `dronevision/l2_perception/runtimes/tflite_rt.py` (`/usr/lib/libethosu_delegate.so` backend) |
+| Phase 6: NPU accuracy, speed and scheduling | Complete | 40.18 ms isolated inference, 167.8 ms (5.96 Hz) 4-cam 2-worker fix, 52.39 mm 3D error |
 | Separate CPU track: static INT8 ONNX | Pending | Does not block the NPU track |
 
 Repository state at this checkpoint:

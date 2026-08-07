@@ -211,17 +211,16 @@ The tests were run serially to avoid CPU, memory and thermal interference:
   --detector yolo --runtime onnx --threads 2 --mode encoded
 ```
 
-### Summary
-
 | Configuration | Localized | Misses | Mean 3D error | P95 3D error | Mean total | Frame sets/s |
 |---|---:|---:|---:|---:|---:|---:|
 | Colour, decoded | 337 | 0 | 6.22 mm | 10.72 mm | 30.225 ms | 33.09 |
 | YOLO ONNX FP32, 1 thread | 333 | 4 | 36.42 mm | 77.58 mm | 1,607.158 ms | 0.622 |
 | YOLO ONNX FP32, 2 threads | 333 | 4 | 36.42 mm | 77.58 mm | 977.734 ms | 1.023 |
 | YOLO ONNX FP32, 2 threads, JPEG | 333 | 4 | 36.42 mm | 77.58 mm | 990.761 ms | 1.009 |
+| **YOLO INT8 Ethos-U65 NPU (Sequential)** | **336** | **1** | **52.39 mm** | **95.94 mm** | **199.369 ms** | **5.02** |
+| **YOLO INT8 Ethos-U65 NPU (2 Workers)** | **336** | **1** | **52.39 mm** | **95.94 mm** | **167.777 ms** | **5.96** |
 
-YOLO localized 98.81% of the corpus frame sets. Its maximum observed 3D error was
-181.64 mm, and it used an average of 3.39 of the four cameras per estimate. Precision was
+YOLO localized 98.81% of the corpus frame sets on FP32 and 99.70% (336/337) on Ethos-U NPU. Precision was
 identical across thread counts and input modes, as expected.
 
 ### Timing breakdown
@@ -232,6 +231,8 @@ identical across thread counts and input modes, as expected.
 | YOLO, 1 thread, decoded | 0.060 ms | 1,604.101 ms | 2.918 ms | 1,607.158 ms | 541.71 s |
 | YOLO, 2 threads, decoded | 0.060 ms | 974.626 ms | 2.968 ms | 977.734 ms | 329.59 s |
 | YOLO, 2 threads, JPEG | 14.385 ms | 973.363 ms | 2.936 ms | 990.761 ms | 333.99 s |
+| **YOLO Ethos-U NPU (Sequential)** | **0.059 ms** | **195.899 ms** | **3.330 ms** | **199.369 ms** | **67.30 s** |
+| **YOLO Ethos-U NPU (2 Workers)** | **0.060 ms** | **164.176 ms** | **3.459 ms** | **167.777 ms** | **56.66 s** |
 
 Two threads provide a 1.644x speed-up and reduce total latency by 39.16% relative to one
 thread. The process consumed approximately 173-175% CPU, showing that ONNX used both cores
