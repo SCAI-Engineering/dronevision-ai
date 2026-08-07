@@ -4,6 +4,14 @@ Everything here answers a question with a number. Nothing here is imported by th
 `dronevision` package; these are the tools that check whether it is right and how
 fast it is.
 
+## INT8 calibration split
+
+`python -m bench.quant_split` validates the recorded ZIP and writes
+`data/corpus/quantization_split.json`. The default selects 64 frame sets evenly across the
+whole recording and includes all four cameras from each: 256 representative calibration
+images. The remaining 273 synchronized frame sets form the quantization holdout. No JPEGs
+are copied or re-encoded, and source hashes make the manifest self-identifying.
+
 Two kinds, and the difference matters:
 
 | | Needs a simulator? | Purpose |
