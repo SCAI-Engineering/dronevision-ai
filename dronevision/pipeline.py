@@ -26,8 +26,25 @@ class Estimate:
     raw: tuple                       # before smoothing and correction
     cams_used: list                  # cameras surviving outlier rejection
     n_detections: int                # cameras that reported anything at all
-    src_stamp: float = 0.0           # capture time of the frames used
-    clock: str = "unknown"           # which clock src_stamp is on; see output.schema
+    src_stamp: float = 0.0           # OLDEST capture time in the set: a staleness
+                                     # bound, deliberately pessimistic
+    newest_stamp: float = 0.0        # NEWEST capture time in the set
+    # MEAN capture time -- the instant this estimate actually describes, and the
+    # one to use when lining it up against any other time series.
+    #
+    # The three are not interchangeable. `src_stamp` answers "how old could this
+    # be?" (what a consumer deciding whether to act on it needs) and
+    # `newest_stamp` bounds the other end; neither is when the scene happened.
+    # Triangulation weights every camera roughly equally, so the 3D point it
+    # returns corresponds to the average of their capture instants, not to
+    # either extreme. With real cross-camera skew the extremes sit tens of
+    # milliseconds apart -- 80 ms on the 2 m/s corpus, 160 mm of target movement
+    # -- so indexing by an endpoint charges half that gap to the estimate as if
+    # it were error. Measured: on three corpora the error-minimising instant
+    # landed within 5 ms of this mean every time, while both endpoints were
+    # 10-55 mm worse.
+    mean_stamp: float = 0.0
+    clock: str = "unknown"           # which clock the stamps are on; see output.schema
     timings_ms: dict = field(default_factory=dict)
 
     @property
@@ -54,12 +71,19 @@ class LocalizationPipeline:
     """Detect, associate, triangulate and smooth — one target, several cameras."""
 
     def __init__(self, cal=None, detector=None, associator=None, smoother=None,
-                 occlude=None, cams=None, marker_correction=None, timing=False):
+                 occlude=None, cams=None, marker_correction=None, timing=False,
+                 sync=None):
         self.cal = cal if cal is not None else default_site()
         self.detector = detector if detector is not None else make_detector()
         self.associator = associator or DetectionAssociator()
         self.smoother = smoother if smoother is not None else EMASmoother(0.5)
         self.tri = Triangulator(self.cal)
+        #: Optional `FrameSync` (layer 1). None keeps today's behaviour: the
+        #: newest frame per camera, whatever its age relative to the others.
+        #: Given one, `locate_from` routes acquisition through it and drops
+        #: cameras that fell out of alignment instead of triangulating them
+        #: as if they were simultaneous. See `l1_image_sync.aligner`.
+        self.sync = sync
         self.cams = list(cams) if cams is not None else self.cal.cam_names
         #: Cameras to ignore. Used to reproduce occlusion without changing a world.
         self.occlude = set(occlude or ())
@@ -96,12 +120,17 @@ class LocalizationPipeline:
                 dets[cam] = px
         return dets
 
-    def locate(self, frames, src_stamp=0.0, clock="unknown"):
+    def locate(self, frames, src_stamp=0.0, clock="unknown", newest_stamp=None,
+               mean_stamp=None):
         """Run layers 2-5 on one set of frames. Returns an `Estimate` or None.
 
         None means too few cameras saw the target — a routine occurrence, not an
         error. The smoother is deliberately *not* reset on a miss: brief dropouts
         are common and the previous estimate remains the best available guess.
+
+        `newest_stamp` and `mean_stamp` both default to `src_stamp`, which is
+        right for a caller that has only one time to give: with no skew
+        information all three coincide.
         """
         t = {}
         tick = time.perf_counter   # local alias; must not shadow the `clock` arg
@@ -135,27 +164,51 @@ class LocalizationPipeline:
         self.seq += 1
         return Estimate(position=tuple(sm), raw=tuple(X), cams_used=used,
                         n_detections=len(dets), src_stamp=src_stamp,
+                        newest_stamp=src_stamp if newest_stamp is None
+                        else newest_stamp,
+                        mean_stamp=src_stamp if mean_stamp is None
+                        else mean_stamp,
                         clock=clock, timings_ms=t)
 
     def locate_from(self, source):
         """Convenience: pull the newest frame set from a `FrameSource` and locate.
 
-        Uses the oldest stamp in the set, since that is the age of the estimate —
-        it can be no fresher than its stalest input.
+        Records both ends of the set's capture window. The oldest stamp is the
+        age of the estimate — it can be no fresher than its stalest input — and
+        the newest is when the scene it describes actually happened. Anything
+        lining the estimate up against another time series wants the second; a
+        consumer deciding whether the position is too old to act on wants the
+        first.
 
         Acquisition is TIMED, as an `acquire` stage. It is not free: a source may
         decode JPEG here, and on an Arm CPU that is a real part of the per-frame
         budget. Leaving it outside the measured region made the pipeline look
         identical whether frames arrived compressed or ready — which silently
         hid the cost the deployment actually pays.
+
+        With `self.sync` set, every active camera's newest frame is fed to it
+        before asking for the aligned set, so a camera that fell out of alignment
+        is dropped here rather than reaching triangulation.
         """
         t0 = time.perf_counter()
-        frames = {c: source.latest(c) for c in self.active_cams}
-        stamps = [m["stamp"] for c in self.active_cams
-                  if (m := source.meta(c)) and m.get("stamp") is not None]
+        if self.sync is not None:
+            for c in self.active_cams:
+                frame = source.latest(c)
+                if frame is not None:
+                    meta = source.meta(c) or {}
+                    self.sync.add(c, frame, stamp=meta.get("stamp"),
+                                  seq=meta.get("seq"))
+            frames = self.sync.latest_aligned()
+            stamps = [self.sync.stamp(c) for c in frames]
+        else:
+            frames = {c: source.latest(c) for c in self.active_cams}
+            stamps = [m["stamp"] for c in self.active_cams
+                      if (m := source.meta(c)) and m.get("stamp") is not None]
         acquire_ms = (time.perf_counter() - t0) * 1e3
 
         est = self.locate(frames, src_stamp=min(stamps) if stamps else 0.0,
+                          newest_stamp=max(stamps) if stamps else 0.0,
+                          mean_stamp=(sum(stamps) / len(stamps)) if stamps else 0.0,
                           clock=getattr(source, "clock", "unknown"))
         if est is not None and self.timing:
             est.timings_ms["acquire"] = acquire_ms

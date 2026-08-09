@@ -117,6 +117,13 @@ class ReplaySource(FrameSource):
         self._zip = None
         self._cache = {}                  # (cam, index) -> ndarray or bytes
 
+        # Precomputed once for `truth_at`: (time, position) pairs, in order, for
+        # every record that has a truth value. See `_truth_time` for why "time"
+        # here is not the record's own `t` field.
+        truthy = [r for r in self._records if r.get("truth") is not None]
+        self._truth_times = [self._truth_time(r) for r in truthy]
+        self._truth_values = [np.array(r["truth"], float) for r in truthy]
+
         self._zip = zipfile.ZipFile(self.path / FRAMES_FILE, "r")
         if mode in ("decoded", "encoded"):
             self._preload(decode=(mode == "decoded"))
@@ -222,6 +229,62 @@ class ReplaySource(FrameSource):
         if rec is None or rec.get("truth") is None:
             return None
         return np.array(rec["truth"], float)
+
+    @staticmethod
+    def _truth_time(rec):
+        """When `rec["truth"]` was sampled.
+
+        `truth_stamp` is the recorded answer and is used whenever present: the
+        simulator publishes the vehicle pose with its own timestamp, and that is
+        the only value here that is measured rather than inferred.
+
+        Corpora recorded before `truth_stamp` was persisted fall back to the
+        newest camera stamp, on the reasoning that the recorder queries the pose
+        right after confirming every pending camera has refreshed. That
+        reasoning is WRONG, and measurably so: fitting the offset that minimises
+        localization error puts the true sampling instant 40-70 ms *before* the
+        oldest camera stamp, i.e. outside the capture window entirely, which no
+        blend of camera times can explain. The fallback is kept only so legacy
+        corpora still load -- their absolute error figures carry that unknown
+        offset (worth 80-310 mm of apparent error at 1-4 m/s) and are not
+        comparable with corpora recorded since. Re-record rather than trust it.
+        """
+        if rec.get("truth_stamp") is not None:
+            return rec["truth_stamp"]
+        stamps = [c.get("stamp") for c in rec["cams"].values()
+                 if c.get("stamp") is not None]
+        return max(stamps) if stamps else rec.get("t")
+
+    def truth_at(self, t):
+        """Ground truth position at simulation time `t`, linearly interpolated
+        between the two recorded samples that bracket it. Clamped at the ends
+        of the recording rather than extrapolated. None if the corpus carries
+        no truth at all.
+
+        Exists because comparing an estimate against `self.truth` (the current
+        cursor's recorded value) silently assumes the estimate represents the
+        same instant that row's truth was sampled at. That assumption breaks
+        the moment an estimate is built from anything other than every active
+        camera's latest frame -- e.g. `l1_image_sync.FrameSync`, which
+        deliberately prefers an older but internally-consistent set of cameras
+        over the freshest-but-misaligned one. Comparing that estimate against
+        the *current row's* truth then measures two different instants and
+        calls the gap "error" -- exactly the confound this method removes.
+        """
+        if not self._truth_times:
+            return None
+        times = self._truth_times
+        if t <= times[0]:
+            return self._truth_values[0].copy()
+        if t >= times[-1]:
+            return self._truth_values[-1].copy()
+        for i in range(1, len(times)):
+            if times[i] >= t:
+                t0, t1 = times[i - 1], times[i]
+                p0, p1 = self._truth_values[i - 1], self._truth_values[i]
+                f = 0.0 if t1 == t0 else (t - t0) / (t1 - t0)
+                return p0 + (p1 - p0) * f
+        return self._truth_values[-1].copy()   # unreachable except on rounding
 
     @property
     def truth_speed(self):

@@ -10,6 +10,10 @@ this is being optimized for. `--frames` measures live instead.
     python -m bench.accuracy --frames tcp://127.0.0.1:5555 -n 200
     python -m bench.accuracy --occlude cam_ne,cam_sw
     python -m bench.accuracy --marker-offset               # calibrate the offset
+    python -m bench.accuracy --sync-tol-ms 50               # drop misaligned cams
+    python -m bench.accuracy --track-every 5                # detect-then-track
+    python -m bench.accuracy --track-every 1 --crop          # crop, no skipping
+    python -m bench.accuracy --track-every 5 --crop          # skip AND crop
 
 READING THE VERTICAL ERROR. It is reported signed. A large mean with a small
 spread means the marker offset is wrong, not that the estimate is noisy — two very
@@ -25,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 
+from dronevision.l1_image_sync.aligner import FrameSync
 from dronevision.l5_estimation.smoothing import EMASmoother
 from dronevision.l2_perception.detector import make_detector
 from dronevision.pipeline import LocalizationPipeline
@@ -97,23 +102,53 @@ def main(argv=None):
     ap.add_argument("--max-speed", type=float, default=0.15,
                     help="--marker-offset: discard faster samples (motion blur "
                          "drags the centroid and biases the offset)")
+    ap.add_argument("--sync-tol-ms", type=float, default=None,
+                    help="enable FrameSync: drop cameras whose frame is more than "
+                         "this many ms older than the newest one, instead of "
+                         "triangulating a set with unequal capture times. Unset "
+                         "keeps the newest-frame-per-camera behaviour")
+    ap.add_argument("--track-every", type=int, default=None,
+                    help="enable detect-then-track (TrackedCamera): run the "
+                         "network 1 frame in N per camera, coast on a 2D Kalman "
+                         "predictor the rest of the time. Unset runs the network "
+                         "on every frame, every camera")
+    ap.add_argument("--track-adaptive", action="store_true",
+                    help="--track-every: vary the interval by prediction error "
+                         "instead of holding it fixed")
+    ap.add_argument("--crop", action="store_true",
+                    help="--track-every: search a --crop-pad window around the "
+                         "Kalman prediction instead of the full frame once a "
+                         "track exists, falling back to full-frame on a miss")
+    ap.add_argument("--crop-pad", type=int, default=64,
+                    help="half-width in px of the crop window around the "
+                         "prediction")
     a = ap.parse_args(argv)
 
     site = load_site(a.site)
     src, live = open_source(a, site)
+    occlude = [c for c in a.occlude.split(",") if c]
+    active_cams = [c for c in site.cam_names if c not in occlude]
+
     det_kw = {}
     if a.detector in ("yolo", "hybrid"):
         det_kw = {"runtime": a.runtime, "threads": a.threads, "imgsz": a.imgsz}
     detector = make_detector(a.detector, **det_kw)
-    occlude = [c for c in a.occlude.split(",") if c]
+    if a.track_every:
+        from dronevision.l3_association.tracker import TrackedDetector
+        detector = TrackedDetector(detector, active_cams, detect_every=a.track_every,
+                                   adaptive=a.track_adaptive, crop=a.crop,
+                                   crop_pad=a.crop_pad)
+
+    sync = FrameSync(active_cams, tol_ms=a.sync_tol_ms) if a.sync_tol_ms else None
     pipe = LocalizationPipeline(cal=site, detector=detector,
                                 smoother=EMASmoother(a.alpha),
-                                occlude=occlude, timing=True)
+                                occlude=occlude, timing=True, sync=sync)
 
     print(f"site={site.name} detector={detector.name} "
           f"marker_correction={pipe.marker_correction}")
     print(f"source={'live ' + a.frames if live else a.corpus} "
-          f"cameras={pipe.active_cams}" + (f" occluded={occlude}" if occlude else ""))
+          f"cameras={pipe.active_cams}" + (f" occluded={occlude}" if occlude else "")
+          + (f" sync_tol_ms={a.sync_tol_ms}" if sync else ""))
     print()
 
     err3, errz, errxy, ncams, nrej, alts, speeds = [], [], [], [], [], [], []
@@ -122,9 +157,27 @@ def main(argv=None):
     miss = 0
     t_start = time.time()
 
-    for s, truth, speed in samples(src, live, a.samples, a.interval):
+    for s, truth_now, speed in samples(src, live, a.samples, a.interval):
         est = pipe.locate_from(s)
-        if est is None or truth is None:
+        if est is None:
+            miss += 1
+            continue
+        # Compare against truth AT THE ESTIMATE'S OWN TIMESTAMP, not at "now"
+        # (the cursor's recorded truth). They coincide only when the estimate was
+        # built from every camera's very latest frame. `sync` deliberately is not
+        # that, so this line is what makes the sync/no-sync comparison fair rather
+        # than measuring "estimate age" as if it were triangulation error.
+        #
+        # `mean_stamp`, not either endpoint. Triangulation weights the cameras
+        # roughly equally, so its output describes the average of their capture
+        # instants; `src_stamp` is a staleness bound and `newest_stamp` bounds
+        # the other end, and indexing by either charges half the skew width to
+        # the estimate as if it were error. Measured by sweeping the index
+        # across the capture window on three corpora: the minimum landed within
+        # 5 ms of the mean every time (e.g. corpus_square 65.6 mm at the mean,
+        # 110.6 mm at the oldest, 81.8 mm at the newest).
+        truth = s.truth_at(est.mean_stamp) if not live else truth_now
+        if truth is None:
             miss += 1
             continue
         d = np.array(est.position) - truth
@@ -186,6 +239,31 @@ def main(argv=None):
         tot = np.array([sum(v) for v in zip(*stage.values())])
         print("  %-12s mean %8.3f   -> %.0f Hz compute ceiling"
               % ("TOTAL", tot.mean(), 1000.0 / tot.mean()))
+
+    if a.track_every:
+        print()
+        print("TRACKING (detect-then-track%s)" % (" + crop" if a.crop else ""))
+        ticks = sum(detector.modes.values())
+        w, h = site.raw.get("defaults", {}).get("resolution", [640, 360])
+        full_frame_px = w * h
+        print("  network calls   %d  (%.1f%% of %d camera-ticks)"
+              % (detector.calls, 100.0 * detector.calls / ticks if ticks else 0, ticks))
+        print("  modes           " + "  ".join(
+            f"{k}={v}" for k, v in sorted(detector.modes.items())))
+        if a.crop:
+            print("  pixels sent     %d  (%.1f%% of what full-frame-every-call "
+                  "would have cost: %d x %d px)"
+                  % (detector.pixels,
+                     100.0 * detector.pixels / (detector.calls * full_frame_px)
+                     if detector.calls else 0, w, h))
+            print("  crop misses     %d  (%.1f%% of calls -- paid for a "
+                  "full-frame retry)"
+                  % (detector.crop_misses,
+                     100.0 * detector.crop_misses / detector.calls
+                     if detector.calls else 0))
+        else:
+            print("  pixels/call     %d x %d = %d  (no crop -> full frame every call)"
+                  % (w, h, full_frame_px))
 
     if speeds and len(err3) > 20:
         print()

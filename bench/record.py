@@ -93,10 +93,21 @@ def main(argv=None):
                 last_seq[c] = metas[c]["seq"]
 
             truth = src.truth
+            # The pose's OWN timestamp, not the time this loop happened to read
+            # it. Without it a consumer has to guess when the truth was sampled
+            # relative to the frames, and every available guess is wrong: the
+            # cameras are skewed by tens of milliseconds, so an error of one
+            # skew-width gets charged to the estimator. Measured on corpora
+            # recorded before this line existed, that guess cost 80-310 mm of
+            # apparent 3D error at 1-4 m/s -- comparable to the quantity being
+            # measured. It is one float; record it.
+            truth_stamp = src.truth_stamp
             rec = {"i": i,
                    "t": round(min(metas[c]["stamp"] for c in have), 6),
                    "truth": None if truth is None
                             else [round(float(v), 5) for v in truth],
+                   "truth_stamp": None if truth_stamp is None
+                                  else round(float(truth_stamp), 6),
                    "cams": {}}
             for c in have:
                 ok, buf = cv2.imencode(".jpg", cv2.cvtColor(frames[c], cv2.COLOR_RGB2BGR), enc)
