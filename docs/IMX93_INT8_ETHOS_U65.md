@@ -2,7 +2,7 @@
 
 This document preserves the current state and the intended next steps for quantizing the
 DroneVision detector and running it on the Arm Ethos-U65 in the NXP i.MX93 FRDM board.
-It was last updated on 7 August 2026. Commands below are plans or command templates unless
+It was last updated on 9 August 2026. Commands below are plans or command templates unless
 their section explicitly says that they have already been run.
 
 ## Current checkpoint
@@ -14,8 +14,8 @@ their section explicitly says that they have already been run.
 | Phase 1: calibration/holdout split | Complete and committed | commit `df30963`, `data/corpus/quantization_split.json` |
 | Phase 2: raw FP32 YOLO export | Complete | `models/drone_yolo26n_v4_raw.onnx` |
 | Phase 2: full-corpus raw FP32 validation | Complete | 337/337, 30.87 mm mean, 59.13 mm P95 |
-| Phase 3: full-integer TFLite conversion | Complete | `models/drone_yolo26n_v4_raw_fp32.tflite`, `models/drone_yolo26n_v4_raw_int8.tflite` |
-| Phase 4: Vela compatibility and compilation | Complete | `bench/out/vela/drone_yolo26n_v4_raw_int8_vela.tflite` (100% NPU delegation, 21.58 ms / 46.3 inf/s est.) |
+| Phase 3: full-integer TFLite conversion | Complete | `models/drone_yolo26n_v4_raw_int8_io.tflite`: INT8 `[1,3,320,320]` input and INT8 `[1,5,2100]` output |
+| Phase 4: Vela compatibility and compilation | Complete | `bench/out/vela/drone_yolo26n_v4_raw_int8_io_vela.tflite`: 1/1 node delegated, no CPU boundary nodes |
 | Phase 5: DroneVision TFLite/Ethos-U runtime | Complete | `dronevision/l2_perception/runtimes/tflite_rt.py` (`/usr/lib/libethosu_delegate.so` backend) |
 | Phase 6: NPU accuracy, speed and scheduling | Complete | 40.18 ms isolated inference, 167.8 ms (5.96 Hz) 4-cam 2-worker fix, 52.39 mm 3D error |
 | Separate CPU track: static INT8 ONNX | Pending | Does not block the NPU track |
@@ -25,8 +25,8 @@ Repository state at this checkpoint:
 - `df30963` is the committed phase-1/NPU-context checkpoint.
 - Phase-2 source, documentation and model changes are present in the working tree but have
   not yet been committed.
-- No DroneVision INT8 TFLite artifact exists yet, and DroneVision has not yet executed on
-  the NPU.
+- The final integer-I/O artifact has been executed on the NPU and validated on the full
+  337-set corpus.
 
 ## Why this work is necessary
 
@@ -284,8 +284,9 @@ be captured when run. The intended artifact chain is:
 PyTorch `.pt`
   -> raw-head FP32 export
   -> FP32 TFLite functional reference
-  -> representative-dataset full INT8 TFLite
+  -> representative-dataset full INT8 TFLite (Ultralytics FP32 public boundaries)
   -> Vela-compiled `_vela.tflite`
+  -> remove only the compiled graph's boundary QUANTIZE/DEQUANTIZE nodes
   -> TFLite + Ethos-U delegate on i.MX93
 ```
 
@@ -321,6 +322,39 @@ Save the complete compiler output. In particular, preserve:
 - estimated operations, cycles, bandwidth and peak memory;
 - subgraph input/output types, shapes, scales and zero points;
 - warnings about unsupported operators or tensor constraints.
+
+### Verified integer input/output boundary export
+
+Ultralytics 8.4.104 deliberately applies `NO_QUANTIZE` to the public input and output.
+Compiling that calibrated graph with Vela 3.12.0 works, but leaves the runtime graph as
+`QUANTIZE (CPU) -> ethos-u -> DEQUANTIZE (CPU)`. Requantizing the FP32 model directly with
+integer boundaries was rejected: it changed constant encoding and Vela failed with an
+`AssertionError`. Removing the two boundary operators *before* Vela also triggers that
+Vela 3.12 limitation for this NCHW graph.
+
+The verified workflow therefore compiles the original calibrated graph first, then exposes
+the already-calibrated INT8 tensors around the compiled `ethos-u` node:
+
+```bash
+.venv-export/bin/python -m bench.export_tflite --mode int8-io
+
+# For the deployable compiled model, after the normal Vela compilation:
+.venv-export/bin/python -m bench.export_tflite --mode int8-io \
+  --source-int8-io bench/out/vela/drone_yolo26n_v4_raw_int8_vela.tflite \
+  --output-int8-io bench/out/vela/drone_yolo26n_v4_raw_int8_io_vela.tflite
+```
+
+Verified final contract and results on the i.MX93:
+
+| Property | Result |
+|---|---|
+| SHA-256 | `8c8e91d09a6ea20ed64ed128034183a5c058b35952fbff214d8a62309e711e61` |
+| Input | INT8 NCHW `[1,3,320,320]`, scale `1/255`, zero point `-128` |
+| Output | INT8 `[1,5,2100]`, scale `0.0078429878`, zero point `-128` |
+| Delegation | `1 nodes delegated out of 1`; no CPU boundary nodes |
+| Raw-output parity | Exact against the prior compiled model (`max_abs=0`) |
+| Invoke latency, 100 calls | 36.84 ms mean versus 37.70 ms; 2.3% lower |
+| Full corpus, confidence 0.25 | 336/337, 52.39 mm mean, 95.94 mm P95; unchanged |
 
 ## Minimal board-side delegate smoke test
 

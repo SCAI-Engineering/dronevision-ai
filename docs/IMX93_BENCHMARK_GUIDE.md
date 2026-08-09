@@ -53,7 +53,7 @@ Run complete 3D localization across all 337 synchronized 4-camera frame sets on 
 HOST=imx ./bench/pi.sh run -m bench.accuracy \
   --detector yolo \
   --runtime tflite \
-  --model bench/out/vela/drone_yolo26n_v4_raw_int8_vela.tflite
+  --model bench/out/vela/drone_yolo26n_v4_raw_int8_io_vela.tflite
 ```
 
 ### C. Full 337-Corpus 3D Accuracy & Latency (2-Worker Pipelined NPU)
@@ -63,7 +63,7 @@ Overlap frame decoding and pre-processing across 2 camera workers with Ethos-U N
 HOST=imx ./bench/pi.sh run -m bench.accuracy \
   --detector yolo \
   --runtime tflite \
-  --model bench/out/vela/drone_yolo26n_v4_raw_int8_vela.tflite \
+  --model bench/out/vela/drone_yolo26n_v4_raw_int8_io_vela.tflite \
   --parallel 2
 ```
 

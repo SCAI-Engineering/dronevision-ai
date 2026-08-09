@@ -11,7 +11,7 @@ from dronevision.io.sources.replay import ReplaySource
 from dronevision.l2_perception.runtimes.tflite_rt import TfLiteRuntime
 
 
-MODEL_PATH = "bench/out/vela/drone_yolo26n_v4_raw_int8_vela.tflite"
+MODEL_PATH = "bench/out/vela/drone_yolo26n_v4_raw_int8_io_vela.tflite"
 DELEGATE_PATH = "/usr/lib/libethosu_delegate.so"
 
 

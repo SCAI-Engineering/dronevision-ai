@@ -104,6 +104,14 @@ class TfLiteRuntime(InferenceRuntime):
             return x.astype(np.float32) / 255.0
 
         if scale > 0.0:
+            # Common image contract: scale=1/255 and zero_point=-128. Convert
+            # uint8 pixels directly to INT8 without a float round-trip.
+            if np.isclose(scale, 1.0 / 255.0, rtol=0.0, atol=1e-9):
+                q_min = int(np.iinfo(self.in_dtype).min)
+                q_max = int(np.iinfo(self.in_dtype).max)
+                return np.clip(x.astype(np.int16) + int(zero_point), q_min, q_max).astype(
+                    self.in_dtype
+                )
             # Scale float [0, 1] to integer tensor using scale and zero_point
             x_float = x.astype(np.float32) / 255.0
             q_min = float(np.iinfo(self.in_dtype).min)
