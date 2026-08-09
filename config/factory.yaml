@@ -58,17 +58,17 @@ defaults:
 # discovered later in the error numbers.
 cameras:
   cam_ne:
-    position: [9.0, 9.0, 4.5]
-    rpy: [0.0, 0.30, -2.356]       # yaw -135 deg: faces south-west
+    position: [8.998458, 9.000056, 4.491821]
+    rpy: [-0.026598, 0.332778, -2.361913]       # yaw -135 deg: faces south-west
   cam_nw:
-    position: [-9.0, 9.0, 4.5]
-    rpy: [0.0, 0.30, -0.785]       # yaw  -45 deg: faces south-east
+    position: [-9.001363, 9.002262, 4.493449]
+    rpy: [-0.029661, 0.332924, -0.791304]       # yaw  -45 deg: faces south-east
   cam_sw:
-    position: [-9.0, -9.0, 4.5]
-    rpy: [0.0, 0.30, 0.785]        # yaw  +45 deg: faces north-east
+    position: [-9.00203, -9.003338, 4.495186]
+    rpy: [0.008065, 0.332861, 0.785677]        # yaw  +45 deg: faces north-east
   cam_se:
-    position: [9.0, -9.0, 4.5]
-    rpy: [0.0, 0.30, 2.356]        # yaw +135 deg: faces north-west
+    position: [9.007115, -9.008894, 4.491927]
+    rpy: [-0.035847, 0.332251, 2.348786]        # yaw +135 deg: faces north-west
 
 # ---------------------------------------------------------------------------
 # Target
@@ -105,7 +105,7 @@ target:
     # Measured 0.4343 on the ground and 0.4334 hovering at 2.5 m — agreeing to 0.9 mm
     # across 2.53 m, so it is structural. The vehicle model file says 0.18, which is the
     # height above the parent LINK, not above the origin ground truth reports.
-    marker_dz: 0.4333
+    marker_dz: 0.0
     # Bounding-box centroid, found by shape detectors (yolo / motion / hybrid).
     # Measured +0.0950 m, sd 0.0079 over 333 samples. Only observed across a 0.055 m
     # altitude span, so it is well determined but not yet confirmed as structural —
@@ -113,7 +113,7 @@ target:
     airframe_dz: 0.0950
 
   # Retained: older configs and code read this name directly.
-  marker_dz: 0.4333
+  marker_dz: 0.0
 
 # ---------------------------------------------------------------------------
 # Triangulation tuning
