@@ -1,0 +1,120 @@
+{
+  "corpus_version": 1,
+  "site": "factory",
+  "cameras": [
+    "cam_ne",
+    "cam_nw",
+    "cam_sw",
+    "cam_se"
+  ],
+  "resolution": [
+    640,
+    360
+  ],
+  "jpeg_quality": 90,
+  "frame_sets": 196,
+  "requested_rate_hz": 25.0,
+  "duration_s": 16.432,
+  "marker_dz": 0.4333,
+  "source": "tcp://127.0.0.1:5555",
+  "note": "straight line, instantaneous 0.5->3 m/s jump, looping",
+  "site_config": {
+    "name": "factory",
+    "description": "20x20x5 m warehouse, 4 corner-mounted cameras, single drone target",
+    "world": {
+      "convention": "ENU",
+      "origin": "floor_centre"
+    },
+    "defaults": {
+      "resolution": [
+        640,
+        360
+      ],
+      "intrinsics": {
+        "model": "fov",
+        "hfov": 1.2
+      },
+      "axes": "gz_camera"
+    },
+    "cameras": {
+      "cam_ne": {
+        "position": [
+          9.0,
+          9.0,
+          4.5
+        ],
+        "rpy": [
+          0.0,
+          0.3,
+          -2.356
+        ]
+      },
+      "cam_nw": {
+        "position": [
+          -9.0,
+          9.0,
+          4.5
+        ],
+        "rpy": [
+          0.0,
+          0.3,
+          -0.785
+        ]
+      },
+      "cam_sw": {
+        "position": [
+          -9.0,
+          -9.0,
+          4.5
+        ],
+        "rpy": [
+          0.0,
+          0.3,
+          0.785
+        ]
+      },
+      "cam_se": {
+        "position": [
+          9.0,
+          -9.0,
+          4.5
+        ],
+        "rpy": [
+          0.0,
+          0.3,
+          2.356
+        ]
+      }
+    },
+    "target": {
+      "name": "x500",
+      "ground_truth_pose": "x500_0",
+      "offsets": {
+        "marker_dz": 0.4333,
+        "airframe_dz": 0.095
+      },
+      "marker_dz": 0.4333
+    },
+    "triangulation": {
+      "reproj_threshold_px": 25.0,
+      "min_views": 2
+    }
+  },
+  "truth_bounds": {
+    "min": [
+      -2.99,
+      0.0,
+      2.5
+    ],
+    "max": [
+      2.998,
+      0.0,
+      2.5
+    ]
+  },
+  "camera_skew_ms": {
+    "mean": 70.27,
+    "p95": 84.0,
+    "max": 84.0
+  }
+}

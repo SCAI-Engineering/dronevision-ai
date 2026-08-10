@@ -9,6 +9,9 @@ venv/
 
 # Benchmark output is regenerated; the committed results table lives in README.
 bench/out/
+# Raw per-run logs pulled back from the Raspberry Pi (bench/pi.sh pull). Same
+# reasoning: regenerable, and the figures that matter live in docs/.
+bench_out_pi/
 
 # NOTE: data/corpus/ is deliberately NOT ignored — the recorded camera corpus
 # ships with the repo so anyone can reproduce the benchmarks without Gazebo.
