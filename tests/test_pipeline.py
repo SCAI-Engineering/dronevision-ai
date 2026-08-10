@@ -334,3 +334,66 @@ def test_estimate_reports_rejections():
     e = Estimate(position=(0, 0, 0), raw=(0, 0, 0),
                  cams_used=["a", "b"], n_detections=4)
     assert e.n_rejected == 2
+
+
+# --------------------------------------------------------------------------
+# Which instant an estimate describes (`src_stamp` / `newest_stamp` / `mean_stamp`)
+# --------------------------------------------------------------------------
+
+class SkewedSource(StubSource):
+    """A `StubSource` whose cameras carry *different* capture stamps.
+
+    `StubSource` gives every camera the same stamp, which is exactly the case
+    that cannot distinguish the three -- so it cannot catch an estimate indexed
+    by the wrong end of the capture window.
+    """
+
+    def __init__(self, frames, stamps):
+        super().__init__(frames)
+        self._stamps = stamps
+
+    def meta(self, cam):
+        return {"stamp": self._stamps[cam], "seq": 1, "frame_id": cam}
+
+
+def test_mean_stamp_is_the_average_of_the_capture_window():
+    """Triangulation weights the cameras roughly equally, so its output
+    describes the mean capture instant -- not `src_stamp` (a staleness bound)
+    and not `newest_stamp`. Indexing ground truth by either endpoint charges
+    half the cross-camera skew to the estimator as if it were error."""
+    truth = np.array([1.0, -1.0, 2.4])
+    stamps = {"cam_ne": 10.00, "cam_nw": 10.04, "cam_sw": 10.08, "cam_se": 10.12}
+    src = SkewedSource(frames_for(truth), stamps)
+    pipe = LocalizationPipeline(cal=SITE, detector=ColorDetector(),
+                                smoother=EMASmoother(0.0))
+    est = pipe.locate_from(src)
+    assert est is not None
+    assert est.src_stamp == pytest.approx(10.00)
+    assert est.newest_stamp == pytest.approx(10.12)
+    assert est.mean_stamp == pytest.approx(10.06)
+
+
+def test_all_three_stamps_coincide_without_skew():
+    """A caller with only one time to give must not end up with a mean of
+    zero: with no skew information the three are the same instant."""
+    truth = np.array([0.5, 0.5, 2.5])
+    src = StubSource(frames_for(truth), stamp=7.5)
+    pipe = LocalizationPipeline(cal=SITE, detector=ColorDetector(),
+                                smoother=EMASmoother(0.0))
+    est = pipe.locate_from(src)
+    assert est is not None
+    assert est.src_stamp == pytest.approx(7.5)
+    assert est.newest_stamp == pytest.approx(7.5)
+    assert est.mean_stamp == pytest.approx(7.5)
+
+
+def test_locate_defaults_mean_stamp_to_src_stamp():
+    """`locate()` is the lower-level entry point; a caller that passes only
+    `src_stamp` gets it echoed rather than a silent zero."""
+    truth = np.array([0.0, 0.0, 2.5])
+    pipe = LocalizationPipeline(cal=SITE, detector=ColorDetector(),
+                                smoother=EMASmoother(0.0))
+    est = pipe.locate(frames_for(truth), src_stamp=42.0)
+    assert est is not None
+    assert est.mean_stamp == pytest.approx(42.0)
+    assert est.newest_stamp == pytest.approx(42.0)

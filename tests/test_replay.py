@@ -198,6 +198,67 @@ def test_corpus_without_truth(tmp_path):
     src.step()
     assert src.truth is None
     assert src.truth_speed is None
+    assert src.truth_at(100.0) is None
+
+
+# --------------------------------------------------------------------------
+# Ground truth at an arbitrary time (`truth_at`)
+# --------------------------------------------------------------------------
+
+def test_truth_time_uses_the_recorded_truth_stamp_when_present():
+    """The recorded stamp is the only measured answer available, so it wins
+    over anything inferred from the camera stamps -- including when it falls
+    outside the capture window, which is exactly where measurement put it."""
+    rec = {"t": 1.000, "truth": [0, 0, 0], "truth_stamp": 0.945,
+           "cams": {"cam_a": {"stamp": 1.000}, "cam_b": {"stamp": 1.084}}}
+    assert ReplaySource._truth_time(rec) == pytest.approx(0.945)
+
+
+def test_truth_time_falls_back_to_the_newest_camera_stamp_on_legacy_corpora():
+    """Corpora recorded before `truth_stamp` existed still have to load. The
+    fallback is a guess and a known-wrong one -- see `_truth_time` -- but it
+    keeps old corpora readable rather than failing them outright."""
+    rec = {"t": 1.000, "truth": [0, 0, 0],
+           "cams": {"cam_a": {"stamp": 1.000}, "cam_b": {"stamp": 1.084}}}
+    assert ReplaySource._truth_time(rec) == pytest.approx(1.084)
+
+
+def test_a_null_truth_stamp_falls_back_rather_than_returning_none():
+    """A record can carry the key with no value (truth published before the
+    pose topic had spoken). That is the legacy case, not a zero-time sample."""
+    rec = {"t": 1.000, "truth": [0, 0, 0], "truth_stamp": None,
+           "cams": {"cam_a": {"stamp": 1.000}, "cam_b": {"stamp": 1.084}}}
+    assert ReplaySource._truth_time(rec) == pytest.approx(1.084)
+
+
+def test_truth_at_matches_a_recorded_sample_at_its_own_time(corpus):
+    src = ReplaySource(corpus)
+    np.testing.assert_allclose(src.truth_at(100.05), [0.1, -0.05, 2.01])
+
+
+def test_truth_at_interpolates_between_two_recorded_samples(corpus):
+    src = ReplaySource(corpus)
+    # Halfway in time between i=0 (t=100.00) and i=1 (t=100.05).
+    np.testing.assert_allclose(src.truth_at(100.025), [0.05, -0.025, 2.005])
+
+
+def test_truth_at_clamps_before_the_first_sample(corpus):
+    src = ReplaySource(corpus)
+    np.testing.assert_allclose(src.truth_at(0.0), [0.0, 0.0, 2.0])
+
+
+def test_truth_at_clamps_after_the_last_sample(corpus):
+    src = ReplaySource(corpus)
+    last = src._records[-1]
+    np.testing.assert_allclose(src.truth_at(9999.0), last["truth"])
+
+
+def test_truth_at_does_not_require_stepping_the_cursor(corpus):
+    """Unlike `truth`, which tracks the cursor, this is a query over the whole
+    recording -- meaningful even before the first `step()`."""
+    src = ReplaySource(corpus)
+    assert src.index == -1
+    np.testing.assert_allclose(src.truth_at(100.05), [0.1, -0.05, 2.01])
 
 
 def test_summary_reports_bounds(corpus):
