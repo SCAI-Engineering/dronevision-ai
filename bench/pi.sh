@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  pi.sh — drive a Raspberry Pi from this machine
+#  pi.sh — drive an Arm SBC from this machine
 #
 #  The board is headless and the repository is private, so the Pi has no GitHub
 #  credentials. This ships the committed tree over SSH instead, runs a command in
@@ -15,6 +15,9 @@
 #    ./bench/pi.sh shell                 interactive session
 #
 #  HOST defaults to the `ryaanpi` entry in ~/.ssh/config. Override:  HOST=other ./bench/pi.sh info
+#  THREADS defaults to `1 <remote core count>`. Override: THREADS="1 2".
+#  SYSTEM_SITE_PACKAGES=1 reuses a vendor image's optimized Python stack and
+#  installs this project without replacing its NumPy/OpenCV/ONNX Runtime builds.
 # ============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -23,6 +26,9 @@ HOST="${HOST:-ryaanpi}"
 DIR="${DIR:-dronevision-ai}"
 PY="\$HOME/$DIR/.venv/bin/python"
 BRANCH="${BRANCH:-dev}"
+THREADS="${THREADS:-auto}"
+SYSTEM_SITE_PACKAGES="${SYSTEM_SITE_PACKAGES:-0}"
+BOARD_TAG="${BOARD_TAG:-$HOST}"
 
 say() { printf '\033[1m>> %s\033[0m\n' "$*"; }
 
@@ -49,16 +55,22 @@ case "${1:-help}" in
     # result can always be traced to a revision rather than to whatever was lying in
     # the working directory at the time.
     git archive --format=tar "$BRANCH" \
-      | ssh "$HOST" "mkdir -p ~/$DIR && tar -x -C ~/$DIR"
+      | gzip -1 \
+      | ssh "$HOST" "mkdir -p ~/$DIR && tar -xz -C ~/$DIR"
     remote "du -sh ~/$DIR | cut -f1 | xargs -I{} echo '   {} on the board'"
     ;;
 
   setup)
     "$0" sync
     say "creating the virtualenv and installing dependencies"
-    remote "cd ~/$DIR && python3 -m venv .venv 2>/dev/null; \
-            .venv/bin/pip install -q --upgrade pip && \
-            .venv/bin/pip install -e '.[net,ort,dev]' 2>&1 | tail -3"
+    if [ "$SYSTEM_SITE_PACKAGES" = 1 ]; then
+      remote "cd ~/$DIR && python3 -m venv --system-site-packages .venv 2>/dev/null; \
+              .venv/bin/pip install -e . --no-deps 2>&1 | tail -3"
+    else
+      remote "cd ~/$DIR && python3 -m venv .venv 2>/dev/null; \
+              .venv/bin/pip install -q --upgrade pip && \
+              .venv/bin/pip install -e '.[net,ort,dev]' 2>&1 | tail -3"
+    fi
     say "verifying"
     in_venv "-c 'import onnxruntime, cv2, numpy; \
                  print(\"  onnxruntime\", onnxruntime.__version__); \
@@ -76,13 +88,21 @@ case "${1:-help}" in
     say "sweeping (one process per row: thread settings are process-global)"
     # 1 thread and all-cores are both worth having: single-thread isolates the kernel,
     # all-cores is what a deployment actually gets.
-    for t in 1 4; do
+    if [ "$THREADS" = auto ]; then
+      cores="$(remote nproc)"
+      thread_values=(1)
+      [ "$cores" = 1 ] || thread_values+=("$cores")
+    else
+      read -r -a thread_values <<<"$THREADS"
+    fi
+    tag="$(printf '%s' "$BOARD_TAG" | tr -c '[:alnum:]_-' '-')"
+    for t in "${thread_values[@]}"; do
       for m in models/drone_yolo26n_v4.onnx; do
         [ -z "$m" ] && continue
         name="$(basename "$m" .onnx)"
         say "  onnx  $name  threads=$t"
         in_venv "-m bench.speed --runtime onnx --model $m --threads $t \
-                 --iters 60 --json bench/out/pi4-onnx-\${name}-t$t.json" || true
+                 --iters 60 --json bench/out/${tag}-onnx-${name}-t$t.json" || true
       done
     done
     "$0" pull

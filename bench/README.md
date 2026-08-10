@@ -4,7 +4,21 @@ Everything here answers a question with a number. Nothing here is imported by th
 `dronevision` package; these are the tools that check whether it is right and how
 fast it is.
 
-Two kinds of measurements, and the difference matters:
+## INT8 calibration split
+
+`python -m bench.quant_split` validates the recorded ZIP and writes
+`data/corpus/quantization_split.json`. The default selects 64 frame sets evenly across the
+whole recording and includes all four cameras from each: 256 representative calibration
+images. The remaining 273 synchronized frame sets form the quantization holdout. No JPEGs
+are copied or re-encoded, and source hashes make the manifest self-identifying.
+
+`python -m bench.export_raw` exports the trained YOLO26 checkpoint with `end2end=False`.
+The resulting static FP32 ONNX graph emits decoded boxes and class scores as
+`[1,5,2100]`; detection selection stays in the shared codec so that later INT8/TFLite
+exports do not carry `TopK` or NMS into the accelerator graph. The script pins and records
+the original Ultralytics exporter version and source checkpoint hash.
+
+Two kinds, and the difference matters:
 
 | Mode | Source | Purpose |
 |---|---|---|

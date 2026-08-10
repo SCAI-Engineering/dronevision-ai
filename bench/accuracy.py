@@ -86,6 +86,8 @@ def main(argv=None):
     ap.add_argument("--detector", default="color")
     ap.add_argument("--runtime", default=None,
                     help="yolo only: ultralytics | onnx | executorch")
+    ap.add_argument("--model", default=None,
+                    help="yolo only: explicit artifact path or model stem")
     ap.add_argument("--threads", type=int, default=None,
                     help="pin inference threads; required for comparable timings")
     ap.add_argument("--imgsz", type=int, default=320,
@@ -133,7 +135,8 @@ def main(argv=None):
 
     det_kw = {}
     if a.detector in ("yolo", "hybrid"):
-        det_kw = {"runtime": a.runtime, "threads": a.threads, "imgsz": a.imgsz}
+        det_kw = {"runtime": a.runtime, "threads": a.threads, "imgsz": a.imgsz,
+                  "model": a.model}
     
     if a.track_every:
         from dronevision.l3_association.tracker import TrackedDetector
