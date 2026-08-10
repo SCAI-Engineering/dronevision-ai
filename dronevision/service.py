@@ -55,6 +55,14 @@ def main(argv=None):
     ap.add_argument("--state", default="127.0.0.1:5601",
                     help="where to send state estimates; empty to not send")
     ap.add_argument("--detector", default=None, help="color | yolo | motion | hybrid")
+    ap.add_argument("--runtime", default=None, help="ultralytics | onnx | executorch")
+    ap.add_argument("--threads", type=int, default=None, help="inference threads")
+    ap.add_argument("--parallel", type=int, nargs="?", const=-1, default=None,
+                    metavar="N",
+                    help="detect on N cameras concurrently, one engine each. Bare "
+                         "--parallel uses one worker per camera. On a Pi 4 this is "
+                         "worth about 1.17x: both this and intra-op threading hit the "
+                         "same memory-bandwidth ceiling")
     ap.add_argument("--rate", type=float, default=25.0, help="target Hz")
     ap.add_argument("--alpha", type=float, default=0.5, help="EMA smoothing 0..1")
     ap.add_argument("--occlude", default="", help="cameras to ignore, comma separated")
@@ -70,8 +78,22 @@ def main(argv=None):
     src, replaying = build_source(a, site)
     sink = UdpStateSink(a.state) if a.state else None
 
+    det_kw = {}
+    if (a.detector or "color") in ("yolo", "hybrid"):
+        det_kw = {"runtime": a.runtime, "threads": a.threads}
+
+    if a.parallel is not None:
+        from dronevision.l2_perception.parallel import make_parallel
+        workers = None if a.parallel < 0 else a.parallel
+        detector = make_parallel(site.cam_names, detector=a.detector or "color",
+                                 workers=workers,
+                                 **{k: v for k, v in det_kw.items() if k != "threads"})
+    else:
+        detector = make_detector(a.detector, **{k: v for k, v in det_kw.items()
+                                                if v is not None})
+
     pipe = LocalizationPipeline(
-        cal=site, detector=make_detector(a.detector), smoother=EMASmoother(a.alpha),
+        cal=site, detector=detector, smoother=EMASmoother(a.alpha),
         occlude=[c for c in a.occlude.split(",") if c], timing=a.timing or not a.quiet)
 
     print(f"[ai] site={site.name} detector={pipe.detector.name} "
