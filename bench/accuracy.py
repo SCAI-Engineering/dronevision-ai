@@ -138,12 +138,11 @@ def main(argv=None):
         det_kw = {"runtime": a.runtime, "threads": a.threads, "imgsz": a.imgsz,
                   "model": a.model}
     
-    if a.track_every:
-        from dronevision.l3_association.tracker import TrackedDetector
-        detector = TrackedDetector(detector, active_cams, detect_every=a.track_every,
-                                   adaptive=a.track_adaptive, crop=a.crop,
-                                   crop_pad=a.crop_pad)
-    if else a.parallel is not None:
+    # Build the base detector FIRST, then wrap it. `--parallel` and
+    # `--track-every` compose: the former decides how one detection is executed
+    # (one engine per camera, threads split between them), the latter decides
+    # how OFTEN the detector is called at all.
+    if a.parallel is not None:
         from dronevision.l2_perception.parallel import make_parallel
         detector = make_parallel(
             site.cam_names, detector=a.detector,
@@ -151,10 +150,15 @@ def main(argv=None):
             **{k: v for k, v in det_kw.items() if k != "threads"})
     else:
         detector = make_detector(a.detector, **det_kw)
-        
+
+    if a.track_every:
+        from dronevision.l3_association.tracker import TrackedDetector
+        detector = TrackedDetector(detector, active_cams, detect_every=a.track_every,
+                                   adaptive=a.track_adaptive, crop=a.crop,
+                                   crop_pad=a.crop_pad)
+
     sync = FrameSync(active_cams, tol_ms=a.sync_tol_ms) if a.sync_tol_ms else None
-    
-    occlude = [c for c in a.occlude.split(",") if c]
+
     pipe = LocalizationPipeline(cal=site, detector=detector,
                                 smoother=EMASmoother(a.alpha),
                                 occlude=occlude, timing=True, sync=sync)
