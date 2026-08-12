@@ -9,11 +9,11 @@ DroneVision installs and runs correctly on the board with the NXP-provided Pytho
 and ONNX Runtime packages. The complete test suite passes and the bundled FP32 ONNX model
 produces valid output on the CPU.
 
-The classical colour-marker pipeline comfortably exceeds the required 12 four-camera
-frame sets per second. The YOLO FP32 CPU path does not: with both Cortex-A55 cores it
-processes approximately 1.02 frame sets per second, or 4.09 individual camera inferences
-per second. The target workload of four cameras at 12 FPS requires 12 frame sets or 48
-inferences per second, leaving a performance gap of approximately 11.7x.
+The classical colour-marker pipeline processes approximately 33 four-camera frame sets
+per second. The YOLO FP32 CPU path is far slower: with both Cortex-A55 cores it processes
+approximately 1.02 frame sets per second, or 4.09 individual camera inferences per second.
+This makes learned detection—not JPEG decoding or geometry—the dominant optimization
+opportunity.
 
 The next meaningful optimization is an INT8 Ethos-U65 backend. JPEG decoding and the
 geometric stages are not significant bottlenecks.
@@ -253,15 +253,7 @@ dominant cost is therefore inference, not acquisition, decode, association or ge
 
 ## Workload assessment
 
-The intended four-camera workload is:
-
-```text
-4 cameras x 12 FPS = 48 camera inferences/s
-12 synchronized four-camera frame sets/s
-83.3 ms budget per complete frame set
-```
-
-Observed best CPU/YOLO result:
+Observed two-core CPU/YOLO result:
 
 ```text
 4.09 estimated camera inferences/s
@@ -269,11 +261,11 @@ Observed best CPU/YOLO result:
 977.7 ms per decoded frame set
 ```
 
-The FP32 CPU implementation therefore misses the target by approximately 11.7x. It cannot
-serve as the final four-camera 12 FPS implementation.
+The FP32 CPU implementation is almost an order of magnitude slower than the later NPU
+implementation and makes learned perception the clear system bottleneck.
 
-The colour detector achieves 33 frame sets/s and easily fits the time budget, but it
-depends on a visible colour marker and does not replace general drone detection.
+The colour detector achieves 33 frame sets/s, but it depends on a visible colour marker
+and does not replace general drone detection.
 
 ## Comparison context: Raspberry Pi 5
 

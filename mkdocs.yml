@@ -1,0 +1,109 @@
+site_name: DroneVision AI
+site_description: Arm-optimized multi-camera 3D localization for GPS-denied drone flight.
+site_url: https://scai-engineering.github.io/dronevision-ai/
+repo_url: https://github.com/SCAI-Engineering/dronevision-ai
+repo_name: SCAI-Engineering/dronevision-ai
+edit_uri: edit/main/docs/
+copyright: Built by SCAI Engineering for the Arm Create AI Optimization Challenge 2026.
+
+theme:
+  name: material
+  language: en
+  custom_dir: docs/overrides
+  font: false
+  favicon: assets/favicon.svg
+  logo: assets/mark.svg
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: dronevision-dark
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: dronevision-light
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+nav:
+  - Mission: index.md
+  - Project:
+      - Why DroneVision: project/why.md
+      - System architecture: project/architecture.md
+      - Vision pipeline: project/pipeline.md
+      - Simulator & flight demo: project/simulator.md
+  - Arm optimization:
+      - Optimization story: optimization/index.md
+      - Results & methodology: optimization/results.md
+      - NXP i.MX93 validation: IMX93_VALIDATION.md
+      - INT8 & Ethos-U65 engineering: IMX93_INT8_ETHOS_U65.md
+      - Board benchmark guide: IMX93_BENCHMARK_GUIDE.md
+  - Run it:
+      - Reproduce the results: run/reproducibility.md
+      - Benchmark toolkit: run/benchmarks.md
+  - Engineering log:
+      - Decisions & lessons: engineering/lessons.md
+      - Roadmap: engineering/roadmap.md
+  - Submission: submission.md
+
+plugins:
+  - search:
+      lang: en
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
+  - javascripts/mermaid.js
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/SCAI-Engineering/dronevision-ai
+      name: DroneVision AI on GitHub
+    - icon: fontawesome/solid/cube
+      link: https://github.com/SCAI-Engineering/Hackathon_ARM_Simulator
+      name: Companion Gazebo/PX4 simulator
+    - icon: fontawesome/solid/trophy
+      link: https://devpost.com/software/dronevision-ai
+      name: Project submission on Devpost

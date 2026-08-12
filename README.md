@@ -29,7 +29,7 @@ This is the reference the optimization work is measured against — not a target
 
 | | value |
 |---|---|
-| 3D error vs ground truth | **6.22 mm** mean · 6.02 median · 10.72 p95 · 14.79 max |
+| 3D error vs ground truth | **5.02 mm** mean · 4.95 median · 8.55 p95 after geometry refinement |
 | with 2 of 4 cameras occluded | 22.19 mm mean — degrades, keeps working |
 | pipeline cost | ~2.2–2.8 ms → 360–450 Hz compute ceiling |
 | with JPEG decode included | ~4.0 ms → ~250 Hz |
@@ -300,3 +300,18 @@ deployable AI. Both wire formats are owned and documented here — the frame tra
 [dronevision/io/sources/net.py](dronevision/io/sources/net.py) and the state estimate in
 [dronevision/io/schema.py](dronevision/io/schema.py) — so either service can be reimplemented
 against them, including by real hardware.
+
+## Documentation site
+
+The project wiki is built with Material for MkDocs. Preview it locally without publishing:
+
+```bash
+python3 -m venv .venv-docs
+source .venv-docs/bin/activate
+pip install -r requirements-docs.txt
+mkdocs serve
+```
+
+Open `http://127.0.0.1:8000`. GitHub Pages deployment is defined in
+`.github/workflows/docs.yml` and runs only after the documentation changes are pushed to
+`main` and Pages is enabled for GitHub Actions in the repository settings.

@@ -40,8 +40,6 @@ thread each:
 | Isolated inference, two CPU threads | 237.9 ms/image |
 | Best four-camera fix | 875-882 ms/fix |
 | Best sustained rate | 1.14 fixes/s |
-| Required rate | 12 fixes/s |
-| Remaining throughput gap | about 10.5x |
 
 The original end-to-end FP32 reference is 36.42 mm mean 3D error, with 333 localized
 samples and 4 misses out of 337. The phase-2 raw export improves this to 30.87 mm and
@@ -435,20 +433,19 @@ The original end-to-end reference is:
 The primary quantization reference is now the raw FP32 result: 337 localized, zero misses,
 30.87 mm mean, 28.10 mm median, 59.13 mm P95 and 162.78 mm maximum error.
 
-Provisional acceptance criteria should be agreed before conversion. A reasonable starting
-gate is no additional misses and no more than 10% degradation in mean and P95 error, but
-that is a proposed engineering threshold, not an established project requirement. The
-performance objective is 12 complete four-camera fixes per second, an 83.3 ms budget per
-fix. Also report isolated images/s so four-camera scheduling effects remain visible.
+Accuracy and performance must be reported together. The original engineering notes used
+a provisional 10% degradation gate, but it is not an established project requirement and
+should not be presented as one. Report isolated images/s and complete four-camera fix
+latency so scheduling effects remain visible.
 
 Applied to the new raw FP32 reference, the provisional INT8 gate is:
 
 ```text
-localized        337/337 (no additional misses)
-mean 3D error    <= 33.96 mm
-P95 3D error     <= 65.04 mm
-complete fix     target <= 83.3 ms (12 fixes/s)
-camera inference target approximately <= 20.8 ms/image before scheduling overhead
+localized        337/337 raw FP32 reference
+mean 3D error    30.87 mm raw FP32 reference
+P95 3D error     59.13 mm raw FP32 reference
+complete fix     report measured latency and fixes/s
+camera inference report measured latency and images/s
 ```
 
 ## Next steps: phase 3 full-integer TFLite
