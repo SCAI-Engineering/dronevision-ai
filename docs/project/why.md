@@ -8,10 +8,10 @@ Four fixed cameras watch a 20 × 20 metre simulated industrial room. Each camera
 
 This produces a useful separation:
 
-- the drone remains a normal PX4 vehicle;
-- camera and AI hardware can be serviced without touching the aircraft;
-- a colour marker provides a fast, reliable safety baseline;
-- a learned detector can be optimized and benchmarked without risking the flight loop.
+- The drone remains a normal PX4 vehicle;
+- Camera and AI hardware can be serviced without touching the aircraft;
+- A colour marker provides a fast, reliable safety baseline;
+- A learned detector can be optimized and benchmarked without risking the flight loop.
 
 ## Why this is an Arm optimization project
 
@@ -33,11 +33,11 @@ DroneVision was submitted to the **Physical AI track** of the Arm Create: AI Opt
 
 The deliverables are:
 
-1. a reusable five-layer localization package;
-2. a trained one-class YOLO26n detector and deployable artifacts;
-3. a deterministic four-camera benchmark corpus;
-4. board-side automation and machine-readable measurements;
-5. a companion Gazebo/PX4 simulator that demonstrates GPS-denied flight.
+1. A reusable five-layer localization package;
+2. A trained one-class YOLO26n detector and deployable artifacts;
+3. A deterministic four-camera benchmark corpus;
+4. Board-side automation and machine-readable measurements;
+5. A companion Gazebo/PX4 simulator that demonstrates GPS-denied flight.
 
 [:fontawesome-solid-trophy: View the Devpost submission](https://devpost.com/software/dronevision-ai){ .md-button .md-button--primary }
 [:fontawesome-brands-github: Browse the AI repository](https://github.com/SCAI-Engineering/dronevision-ai){ .md-button }
@@ -48,6 +48,6 @@ A useful optimization must be evaluated at the **complete four-camera fix**, not
 
 That definition prevents three common shortcuts:
 
-- timing a single image while ignoring the other cameras;
-- claiming INT8 because weights are quantized while activations remain floating point;
-- reporting that a delegate loaded without checking CPU fallbacks.
+- Timing a single image while ignoring the other cameras;
+- Claiming INT8 because weights are quantized while activations remain floating point;
+- Reporting that a delegate loaded without checking CPU fallbacks.

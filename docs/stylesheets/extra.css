@@ -14,6 +14,7 @@
 }
 
 [data-md-color-scheme="dronevision-dark"] {
+  color-scheme: dark;
   --md-default-bg-color: #071827;
   --md-default-fg-color: #dcecf2;
   --md-default-fg-color--light: #9bb7c5;
@@ -24,6 +25,20 @@
   --md-accent-fg-color: #5bd7f5;
   --md-code-bg-color: #0c2436;
   --md-code-fg-color: #d7edf3;
+  --md-code-hl-color: #5bd7f5;
+  --md-code-hl-color--light: rgba(91, 215, 245, 0.14);
+  --md-code-hl-number-color: #ffad9f;
+  --md-code-hl-special-color: #ff91bd;
+  --md-code-hl-function-color: #d9b4ff;
+  --md-code-hl-constant-color: #bdb7ff;
+  --md-code-hl-keyword-color: #8fc5ff;
+  --md-code-hl-string-color: #8ee6b2;
+  --md-code-hl-name-color: #d7edf3;
+  --md-code-hl-operator-color: #b3ced9;
+  --md-code-hl-punctuation-color: #b3ced9;
+  --md-code-hl-comment-color: #9abfce;
+  --md-code-hl-generic-color: #c4d9e1;
+  --md-code-hl-variable-color: #ffd08a;
   --md-typeset-color: #dcecf2;
   --md-typeset-a-color: #66daf3;
   --md-typeset-table-color: rgba(91, 215, 245, 0.16);
@@ -31,23 +46,6 @@
   --md-admonition-bg-color: #0c2436;
   --md-footer-bg-color: #05111c;
   --md-footer-bg-color--dark: #030b12;
-}
-
-[data-md-color-scheme="dronevision-light"] {
-  --md-default-bg-color: #f4f8fa;
-  --md-default-fg-color: #102838;
-  --md-default-fg-color--light: #496676;
-  --md-primary-fg-color: #0b2234;
-  --md-primary-bg-color: #f4f8fa;
-  --md-accent-fg-color: #087f9d;
-  --md-code-bg-color: #e5eef2;
-  --md-code-fg-color: #102838;
-  --md-typeset-color: #102838;
-  --md-typeset-a-color: #087f9d;
-  --md-typeset-table-color: rgba(8, 127, 157, 0.18);
-  --md-typeset-table-color--light: rgba(8, 127, 157, 0.06);
-  --md-admonition-bg-color: #eef5f7;
-  --dv-line: rgba(8, 127, 157, 0.18);
 }
 
 html { scroll-behavior: smooth; }
@@ -108,7 +106,18 @@ code, kbd, pre, .dv-kicker, .dv-card-label, .dv-lock, .dv-statusbar span, .dv-re
   box-shadow: none;
 }
 .md-typeset .admonition-title, .md-typeset summary { color: var(--md-typeset-color); }
-.md-typeset .highlight code { border-radius: var(--dv-radius); }
+.md-typeset .highlight code {
+  border-radius: var(--dv-radius);
+  color: var(--md-code-fg-color);
+}
+.md-typeset .highlight .c,
+.md-typeset .highlight .c1,
+.md-typeset .highlight .cm,
+.md-typeset .highlight .cp,
+.md-typeset .highlight .cs,
+.md-typeset .highlight .sd {
+  color: var(--md-code-hl-comment-color);
+}
 .md-typeset .md-button {
   border-radius: 0.2rem;
   font-family: "IBM Plex Mono", monospace;

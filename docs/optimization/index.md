@@ -56,11 +56,11 @@ The deployed path is not merely weight-quantized. It uses INT8 input, INT8 activ
 
 The final submission run reports:
 
-- one node delegated out of one, with no CPU boundary nodes;
+- One node delegated out of one, with no CPU boundary nodes;
 - 37.43 ms single-image inference;
-- approximately 6.35× speed-up over two-core i.MX93 FP32 inference;
+- Approximately 6.35× speed-up over two-core i.MX93 FP32 inference;
 - 336/337 localized sets;
-- a model-size reduction from 9.31 MB to 2.42 MB, or 74%;
+- A model-size reduction from 9.31 MB to 2.42 MB, or 74%;
 - 159.91 ms end-to-end, or 6.25 four-camera fixes/s.
 
 The NPU path is **6.11× faster end-to-end than the two-core FP32 baseline** and fully delegated. Its 336/337 localization coverage shows that deployment performance and accuracy still need to be judged together.

@@ -54,12 +54,12 @@ This is close enough that thermal state and run ordering matter. The repository 
 Every cross-board isolated result uses:
 
 - `drone_yolo26n_v4.onnx` with SHA prefix `7acd721e718a`;
-- static 320 × 320 input and batch size 1;
-- explicit runtime and thread counts;
-- warm-up iterations before sampling;
-- an otherwise idle board where possible;
-- mean, median, P95, minimum, maximum and standard deviation;
-- thermal and CPU-feature metadata in JSON.
+- Static 320 × 320 input and batch size 1;
+- Explicit runtime and thread counts;
+- Warm-up iterations before sampling;
+- An otherwise idle board where possible;
+- Mean, median, P95, minimum, maximum and standard deviation;
+- Thermal and CPU-feature metadata in JSON.
 
 Accuracy is deterministic on the fixed bytes. Timing is not. Comparisons therefore belong inside a controlled sweep rather than across unrelated machine states.
 

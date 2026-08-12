@@ -218,12 +218,12 @@ preferable to preventing NPU delegation.
 
 The raw export must keep:
 
-- static batch size 1;
-- static 320x320 spatial dimensions;
-- the same RGB input convention;
-- pixel-space box coordinates, not normalized coordinates;
-- the same one-class weights and confidence semantics;
-- no embedded NMS, TopK or final detection selection.
+- Static batch size 1;
+- Static 320x320 spatial dimensions;
+- The same RGB input convention;
+- Pixel-space box coordinates, not normalized coordinates;
+- The same one-class weights and confidence semantics;
+- No embedded NMS, TopK or final detection selection.
 
 The comparison against the end-to-end FP32 model is complete on all 337 frame sets. The
 raw model uses YOLO26's trained one-to-many branch rather than the end-to-end model's
@@ -314,12 +314,12 @@ memory integration. The first correctness test can use Vela's internal defaults.
 
 Save the complete compiler output. In particular, preserve:
 
-- input model hash and compiled model hash;
+- Input model hash and compiled model hash;
 - Vela version and full command line;
-- operator allocation and CPU fallback list;
-- estimated operations, cycles, bandwidth and peak memory;
-- subgraph input/output types, shapes, scales and zero points;
-- warnings about unsupported operators or tensor constraints.
+- Operator allocation and CPU fallback list;
+- Estimated operations, cycles, bandwidth and peak memory;
+- Subgraph input/output types, shapes, scales and zero points;
+- Warnings about unsupported operators or tensor constraints.
 
 ### Verified integer input/output boundary export
 
@@ -382,16 +382,16 @@ There is currently no TFLite/Ethos-U runtime implementation in DroneVision. Add 
 the existing `TensorRuntime` contract, without changing the detector or geometry layers.
 It should:
 
-- load a normal `.tflite` model on CPU or a Vela model with an explicit delegate path;
-- query input/output shape, dtype, scale and zero point from the interpreter;
-- handle TFLite's expected NHWC layout while preserving RGB and letterboxing semantics;
-- quantize input and dequantize raw output correctly;
-- reuse preallocated input buffers where the Python TFLite API permits it;
-- report model hash, runtime/delegate versions, tensor metadata and whether delegation was
+- Load a normal `.tflite` model on CPU or a Vela model with an explicit delegate path;
+- Query input/output shape, dtype, scale and zero point from the interpreter;
+- Handle TFLite's expected NHWC layout while preserving RGB and letterboxing semantics;
+- Quantize input and dequantize raw output correctly;
+- Reuse preallocated input buffers where the Python TFLite API permits it;
+- Report model hash, runtime/delegate versions, tensor metadata and whether delegation was
   requested in `describe()`;
-- fail clearly if the delegate, device or required quantization metadata is missing;
-- support clean teardown and repeated benchmark construction;
-- keep raw-head decoding in the shared `yolo_codec.py` implementation.
+- Fail clearly if the delegate, device or required quantization metadata is missing;
+- Support clean teardown and repeated benchmark construction;
+- Keep raw-head decoding in the shared `yolo_codec.py` implementation.
 
 Do not silently fall back to CPU when an NPU benchmark was requested. A separate explicit
 TFLite-CPU mode is useful for attribution, but an Ethos-U mode should fail if the delegate
@@ -470,11 +470,11 @@ in the repository.
 Add a small utility that reads `data/corpus/quantization_split.json` and extracts exactly
 its 256 calibration JPEG members into ignored `data/scratch/` storage. It must:
 
-- verify the three corpus hashes from the manifest before extraction;
-- preserve original JPEG bytes rather than decoding and re-encoding;
-- preserve camera and frame-set identity in paths or a generated index;
-- verify 64 frame sets, four cameras each, 256 unique files;
-- produce a minimal dataset YAML or image list accepted by the pinned exporter.
+- Verify the three corpus hashes from the manifest before extraction;
+- Preserve original JPEG bytes rather than decoding and re-encoding;
+- Preserve camera and frame-set identity in paths or a generated index;
+- Verify 64 frame sets, four cameras each, 256 unique files;
+- Produce a minimal dataset YAML or image list accepted by the pinned exporter.
 
 Labels are not required to estimate activation ranges, but the converter must demonstrably
 consume the selected images rather than silently falling back to a default sample dataset.
@@ -494,22 +494,22 @@ ONNX semantics.
 Run representative-dataset static quantization using only the 256 manifested images.
 Require and record:
 
-- integer weights and activations, not weights-only quantization;
-- preferably `int8` or `uint8` model input and output;
-- static `[1,320,320,3]` NHWC input unless the exporter proves otherwise;
-- raw decoded `[1,5,2100]` output or a documented transpose;
-- every input/output scale and zero point;
-- exporter command, dependency versions, calibration-manifest hash and model SHA-256;
-- an operator/dtype inventory proving that unexpected FP32 islands are absent.
+- Integer weights and activations, not weights-only quantization;
+- Preferably `int8` or `uint8` model input and output;
+- Static `[1,320,320,3]` NHWC input unless the exporter proves otherwise;
+- Raw decoded `[1,5,2100]` output or a documented transpose;
+- Every input/output scale and zero point;
+- Exporter command, dependency versions, calibration-manifest hash and model SHA-256;
+- An operator/dtype inventory proving that unexpected FP32 islands are absent.
 
 ### 3.5 Quantization-only correctness gate
 
 Run the uncompiled INT8 model with TFLite CPU before Vela. Compare the same images in this
 order:
 
-1. individual calibration and holdout frames at tensor and decoded-box level;
-2. the 273-set holdout for the primary quantization gate;
-3. all 337 frame sets for continuity with the existing tables.
+1. Individual calibration and holdout frames at tensor and decoded-box level;
+2. The 273-set holdout for the primary quantization gate;
+3. All 337 frame sets for continuity with the existing tables.
 
 If the TFLite CPU result fails the accuracy gate, correct calibration/export first. Vela
 cannot recover accuracy already lost in the quantized artifact.

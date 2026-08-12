@@ -1,19 +1,18 @@
 document$.subscribe(async () => {
-  const dark = document.body.getAttribute("data-md-color-scheme") === "dronevision-dark";
   mermaid.initialize({
     startOnLoad: false,
     theme: "base",
     themeVariables: {
-      background: dark ? "#071827" : "#f4f8fa",
-      primaryColor: dark ? "#103149" : "#dceff4",
-      primaryTextColor: dark ? "#eaf5f8" : "#102838",
+      background: "#071827",
+      primaryColor: "#103149",
+      primaryTextColor: "#eaf5f8",
       primaryBorderColor: "#5bd7f5",
-      lineColor: dark ? "#6f8fa2" : "#3f6f82",
-      secondaryColor: dark ? "#163a4f" : "#e7f1f4",
-      secondaryTextColor: dark ? "#eaf5f8" : "#102838",
+      lineColor: "#6f8fa2",
+      secondaryColor: "#163a4f",
+      secondaryTextColor: "#eaf5f8",
       tertiaryColor: "#ffb454",
       tertiaryTextColor: "#071827",
-      clusterBkg: dark ? "#0b2234" : "#eaf3f6",
+      clusterBkg: "#0b2234",
       clusterBorder: "#397b92",
       fontFamily: "IBM Plex Sans, sans-serif"
     }

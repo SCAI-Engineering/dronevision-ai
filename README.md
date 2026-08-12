@@ -57,8 +57,8 @@ same command measured 2.23 ms on an idle host and 2.79 ms with the simulator, 3D
 AI process running, repeatable to ±0.03 ms within either state. Two consequences, and both
 matter because timing *is* the deliverable:
 
-- never compare a timing across machine states — only within one run of the sweep;
-- the Arm numbers will be measured on an otherwise-idle board with thread pinning, and the
+- Never compare a timing across machine states — only within one run of the sweep;
+- The Arm numbers will be measured on an otherwise-idle board with thread pinning, and the
   conditions reported alongside them.
 
 ### YOLO26n on Arm — measured

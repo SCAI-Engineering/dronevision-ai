@@ -53,11 +53,11 @@ updating a site configuration.
 
 The generator verifies:
 
-- source ZIP and manifest hashes;
-- camera completeness for every selected set;
-- no overlap between calibration and holdout;
-- complete corpus coverage;
-- successful JPEG decode without re-encoding.
+- Source ZIP and manifest hashes;
+- Camera completeness for every selected set;
+- No overlap between calibration and holdout;
+- Complete corpus coverage;
+- Successful JPEG decode without re-encoding.
 
 This makes calibration data part of the artifact provenance rather than an undocumented folder on one workstation.
 

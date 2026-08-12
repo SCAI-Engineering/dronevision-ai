@@ -16,16 +16,7 @@ theme:
   icon:
     repo: fontawesome/brands/github
   palette:
-    - media: "(prefers-color-scheme: dark)"
-      scheme: dronevision-dark
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to light mode
-    - media: "(prefers-color-scheme: light)"
-      scheme: dronevision-light
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
+    scheme: dronevision-dark
   features:
     - navigation.instant
     - navigation.instant.prefetch

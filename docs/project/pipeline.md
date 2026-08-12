@@ -53,10 +53,10 @@ The final layer smooths accepted positions and exposes freshness. It does not co
 
 The most subtle accuracy errors were not detector errors:
 
-- the simulator pose topic contains model and link entries; one plausible-looking link pose never moves;
-- the effective marker offset is 0.4334 m, not the 0.18 m suggested by the model file;
+- The simulator pose topic contains model and link entries; one plausible-looking link pose never moves;
+- The effective marker offset is 0.4334 m, not the 0.18 m suggested by the model file;
 - 85.4% of the room is covered by at least two cameras, leaving single-view dead zones near corners;
-- one pixel of detection error corresponds to roughly 2 cm in the interior and 3.5 cm near the edges.
+- One pixel of detection error corresponds to roughly 2 cm in the interior and 3.5 cm near the edges.
 
 A geometry audit clarified an important dependency: bundle adjustment must compare image detections with the 3D point the detector actually observes. For the colour detector that point is approximately 0.4333 m above vehicle-origin ground truth. Refining against the unshifted vehicle origin lets the optimizer absorb this vertical offset into the camera extrinsics, so reprojection error can improve while the recovered physical calibration becomes less meaningful.
 

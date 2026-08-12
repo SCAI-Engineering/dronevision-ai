@@ -122,11 +122,11 @@ dronevision  /root/dronevision-ai/dronevision/__init__.py
 
 `bench/pi.sh` was generalized for Arm SBCs:
 
-- transfers are gzip-compressed;
+- Transfers are gzip-compressed;
 - `THREADS=auto` tests one thread and the remote core count;
 - `SYSTEM_SITE_PACKAGES=1` preserves vendor-optimized packages;
 - `BOARD_TAG` controls target-specific output names;
-- the script is executable.
+- The script is executable.
 
 The setup command for this board is:
 
