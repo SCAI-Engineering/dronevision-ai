@@ -76,6 +76,8 @@ def main(argv=None):
     ap.add_argument("--site", default="factory")
     ap.add_argument("--detector", default="color")
     ap.add_argument("--runtime", default=None)
+    ap.add_argument("--marker-offset", action="store_true",
+                    help="account for detector marker offset in reprojection (subtract target_dz from truth z)")
     a = ap.parse_args(argv)
 
     site = load_site(a.site)
@@ -85,17 +87,31 @@ def main(argv=None):
 
     print(f"Refining calibration for site: {site.name}")
     
+    # Determine offset to apply to truth for reprojection
+    # The detector sees the marker at +marker_dz above vehicle origin.
+    # For reprojection error minimization, we want to project the detected point,
+    # so we need truth shifted up by marker_dz to match what detector sees.
+    if a.marker_offset:
+        offset_key = getattr(detector, "target_offset_key", None)
+        target_dz = site.target_offset(offset_key) if offset_key else site.marker_dz
+        print(f"Using marker offset correction: {target_dz:.4f} m (truth shifted up)")
+    else:
+        target_dz = 0.0
+        print("No marker offset correction (truth used as-is)")
+    
     # 1. Collect data: {cam: [(truth, uv), ...]}
     data = {name: [] for name in site.cam_names}
     for s in src:
         truth = s.truth
         if truth is None: continue
+        # Shift truth up by marker offset so reprojection matches detected point
+        truth_shifted = np.asarray(truth) + np.array([0, 0, target_dz])
         for cam in site.cam_names:
             img = s.latest(cam)
             if img is None: continue
             uv = detector.detect(img, cam=cam)
             if uv:
-                data[cam].append((truth, np.asarray(uv)))
+                data[cam].append((truth_shifted, np.asarray(uv)))
 
     # 2. Prepare optimization state
     site_info = {
@@ -114,7 +130,7 @@ def main(argv=None):
     initial_guess = np.zeros(len(site.cam_names) * 6)
 
     print("Optimizing Projection Matrices... this may take a minute...")
-    res = minimize(cost_function, initial_guess, args=(data, site_info), method='L-BFGS-B')
+    res = minimize(cost_function, initial_guess, args=(data, site_info), method='L-BFGS-B', options={'maxiter': 1000})
 
     if not res.success:
         print(f"Optimization failed: {res.message}")
