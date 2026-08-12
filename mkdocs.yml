@@ -52,9 +52,11 @@ nav:
       - NXP i.MX93 validation: IMX93_VALIDATION.md
       - INT8 & Ethos-U65 engineering: IMX93_INT8_ETHOS_U65.md
       - Board benchmark guide: IMX93_BENCHMARK_GUIDE.md
+      - "ROI benchmark: Pi 5 vs i.MX93": hw-comparison-pi5-imx93.md
   - Run it:
       - Reproduce the results: run/reproducibility.md
       - Benchmark toolkit: run/benchmarks.md
+      - Motion trajectories: trajectories.md
   - Engineering log:
       - Decisions & lessons: engineering/lessons.md
       - Roadmap: engineering/roadmap.md
