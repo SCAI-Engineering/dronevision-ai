@@ -74,6 +74,12 @@ Optimizes camera extrinsics (positions and rotations) using a non-linear least-s
 python -m bench.refine_calibration --site factory --detector color
 ```
 
+**Important:** When refining calibration with detectors that have a known offset from ground truth (e.g., color marker detector), use the `--marker-offset` flag to account for this offset during optimization. Without it, the bundle adjustment will absorb the offset into camera extrinsics, improving reprojection error while degrading 3D triangulation accuracy.
+
+```bash
+python -m bench.refine_calibration --site factory --detector color --corpus data/corpus_updown_smooth --marker-offset
+```
+
 **Workflow:** `audit_geometry` (Detect Drift) $\rightarrow$ `refine_calibration` (Fix $P$) $\rightarrow$ `accuracy` (Verify 3D).
 
 ## Other Tools
