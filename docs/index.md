@@ -25,7 +25,7 @@ hide:
     <span class="dv-ray dv-ray--a"></span>
     <span class="dv-ray dv-ray--b"></span>
     <span class="dv-crosshair"><i></i></span>
-    <span class="dv-lock">3D LOCK <b>5.02 mm</b></span>
+    <span class="dv-lock">3D LOCK <b>6.28 mm</b></span>
   </div>
 </div>
 
@@ -91,7 +91,7 @@ The profiler made the decision for us: **detection dominates; geometry does not*
 | **Hardware proof** | Pi 4, Pi 5 and i.MX93 measurements with artifact hashes | Attributes speed-ups to the architecture and runtime actually used |
 
 !!! note "Current state"
-    The system is functional and measured. The classical path is fast and precise but requires a visible marker; the learned i.MX93 NPU path reaches 6.25 four-camera fixes/s with 100% graph delegation. The hover corpus does not yet establish performance across varied real rooms or closed-loop point-to-point flight. These limits are documented, not hidden.
+    The system is functional and measured. After auditing how the marker offset interacts with bundle adjustment, the current nominal factory geometry reproduces 337/337 sets at 6.28 mm mean error. The learned i.MX93 NPU path reaches 6.25 four-camera fixes/s with 100% graph delegation. The hover corpus does not yet establish performance across varied real rooms or closed-loop point-to-point flight. These limits are documented, not hidden.
 
 <div class="dv-next">
   <p>Start with the system story, then inspect every number.</p>

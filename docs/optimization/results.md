@@ -2,19 +2,22 @@
 
 ## Accuracy reference
 
-All accuracy rows use the committed 337-set corpus and synchronized ground truth. The
-intermediate rows preserve the detailed validation snapshots recorded during development;
-the refined classical result and final submitted run are the latest project figures.
+Accuracy rows use the committed 337-set corpus and synchronized ground truth. The classical
+reference uses the restored nominal simulator geometry and the explicit detector-to-vehicle
+offset.
 
 | Pipeline | Localized | Mean | Median | P95 | Maximum |
 |---|---:|---:|---:|---:|---:|
-| Colour marker, before geometry refinement | 337/337 | 6.22 mm | 6.02 mm | 10.72 mm | 14.79 mm |
-| **Colour marker, refined calibration** | **337/337** | **5.02 mm** | **4.95 mm** | **8.55 mm** | — |
+| **Colour marker, offset-audited factory geometry** | **337/337** | **6.28 mm** | **6.19 mm** | **10.87 mm** | **14.79 mm** |
 | YOLO FP32, end-to-end | 333/337 | 36.42 mm | 32.07 mm | 77.58 mm | 181.64 mm |
 | YOLO FP32, raw head | **337/337** | 30.87 mm | 28.10 mm | 59.13 mm | 162.78 mm |
 | YOLO INT8, Ethos-U65 | 336/337 | 52.39 mm | — | 95.94 mm | — |
 
-The colour result is a reference, not an AI target: it depends on a visible marker. The learned detector answers the harder deployment question.
+A calibration audit found that refinement with the colour detector must shift ground truth to
+the marker point using `--marker-offset`; otherwise bundle adjustment can absorb the 0.4333 m
+target offset into camera extrinsics. The repository consequently restored nominal simulator
+poses. The colour result is a reference, not an AI target: it depends on a visible marker. The
+learned detector answers the harder deployment question.
 
 ## Four-camera performance
 

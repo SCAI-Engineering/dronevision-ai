@@ -10,7 +10,7 @@ The project contributes both a working Physical AI application and an attributab
 
 ## Submission highlights
 
-- Refined classical reference: 5.02 mm mean, 4.95 mm median and 8.55 mm P95 3D error across 337 synchronized frame sets.
+- Reproduced classical reference: 6.28 mm mean, 6.19 mm median, 10.87 mm P95 and 14.79 mm maximum 3D error across all 337 synchronized frame sets.
 - Ethos-U65: 100% neural graph delegation with no CPU fallback islands.
 - Final localization rate: 6.25 complete four-camera fixes/s, with 336/337 successful frame sets.
 - Model size: 9.31 MB to 2.42 MB, a 74% reduction.

@@ -28,6 +28,7 @@
 
 ### Broaden evidence
 
+- [ ] Re-run calibration refinement with the explicit detector offset and validate the proposed extrinsics end to end
 - [ ] Record varied flight trajectories rather than hover only
 - [ ] Separate quantization holdout from the final accuracy corpus
 - [ ] Run 10–15 minute sustained thermal tests

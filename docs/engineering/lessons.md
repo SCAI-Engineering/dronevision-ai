@@ -22,6 +22,15 @@ The simulator publishes both model and link poses. A link entry looked authorita
 
 The marker definition suggested a 0.18 m vertical offset. Measurement at multiple heights found a stable 0.4334 m effective offset. Using the file value created a 253 mm altitude bias while horizontal accuracy remained excellent—exactly the kind of plausible result that can survive superficial testing.
 
+### Bundle adjustment must optimize the observed point
+
+The colour detector observes the marker, while corpus ground truth describes the vehicle
+origin. Refining camera poses directly against that unshifted origin lets bundle adjustment
+explain the marker's vertical displacement by moving or rotating the cameras. This can lower
+reprojection error without producing a better physical calibration. Refinement now has an
+explicit `--marker-offset` mode, and proposed extrinsics are accepted only after end-to-end
+triangulation is re-measured.
+
 ### JPEG can improve the system boundary
 
 At quality 90, JPEG reduced bandwidth by roughly 70× and slightly improved the centroid of a tiny colour blob through mild low-pass filtering. Accuracy collapsed below quality 80, so compression remains a measured operating point rather than a blanket assumption.

@@ -21,7 +21,7 @@ The detector is interchangeable without changing the geometric stages:
 
 | Detector | Role | Strength | Limitation |
 |---|---|---|---|
-| `color` | Reference and fallback | Fast, deterministic and 5.02 mm mean 3D error after calibration refinement | Requires a visible marker |
+| `color` | Reference and fallback | Fast, deterministic and **6.28 mm mean** on the committed corpus | Requires a visible marker and correct offset calibration |
 | `yolo` | Learned Arm workload | Detects the drone by shape | Dominates compute cost |
 | `motion` | Cheap candidate generator | Suppresses static background | Cannot detect a stationary hover alone |
 | `hybrid` | Motion ROI → YOLO | Reduces the searched area | Requires tracking and motion-aware scheduling |
@@ -42,7 +42,7 @@ The result is graceful degradation:
 
 | Condition | Mean 3D error |
 |---|---:|
-| All four cameras, refined colour reference | **5.02 mm** |
+| All four cameras, offset-audited factory geometry | **6.28 mm** |
 | Two opposing cameras occluded | **22.19 mm** |
 
 ## 5. Temporal estimate
@@ -58,6 +58,8 @@ The most subtle accuracy errors were not detector errors:
 - 85.4% of the room is covered by at least two cameras, leaving single-view dead zones near corners;
 - one pixel of detection error corresponds to roughly 2 cm in the interior and 3.5 cm near the edges.
 
-A geometry audit found a repeatable reprojection bias of roughly 16 pixels. Its low variance pointed to a structural calibration problem rather than random detector noise. Bundle-adjustment refinement reduced mean reprojection error to approximately **0.195 pixels** and improved the classical reference to **5.02 mm mean**, **4.95 mm median** and **8.55 mm P95** 3D error across all 337 frame sets.
+A geometry audit clarified an important dependency: bundle adjustment must compare image detections with the 3D point the detector actually observes. For the colour detector that point is approximately 0.4333 m above vehicle-origin ground truth. Refining against the unshifted vehicle origin lets the optimizer absorb this vertical offset into the camera extrinsics, so reprojection error can improve while the recovered physical calibration becomes less meaningful.
+
+The current `factory.yaml` therefore restores the nominal simulator camera poses, retains the explicit detector offset and requires `--marker-offset` when refining with the colour detector. On the committed corpus this baseline localizes 337/337 sets at **6.28 mm mean**, **6.19 mm median**, **10.87 mm P95** and **14.79 mm maximum** error.
 
 The benchmark toolkit therefore separates geometry auditing, bundle-adjustment refinement and end-to-end accuracy.
