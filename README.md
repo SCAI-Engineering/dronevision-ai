@@ -22,17 +22,21 @@ So this repository does two things:
 2. **Attributes the speedup.** Not "we got N× faster" but *which layer each multiplier came
    from*, which are architecture-dependent, and which are free.
 
-## Measured today
+## Measured results
 
-Baseline, on the shipped corpus, with the **colour-marker** detector (`py -m bench.accuracy`).
-This is the reference the optimization work is measured against — not a target:
+Current result on the shipped corpus with the **colour-marker** detector
+(`py -m bench.accuracy --site factory --detector color`). This is a reference for the
+optimization work, not an AI target:
 
 | | value |
 |---|---|
-| 3D error vs ground truth | **6.22 mm** mean · 6.02 median · 10.72 p95 · 14.79 max |
+| 3D error vs ground truth | **6.28 mm** mean · 6.19 median · 10.87 p95 · 14.79 maximum |
 | with 2 of 4 cameras occluded | 22.19 mm mean — degrades, keeps working |
 | pipeline cost | ~2.2–2.8 ms → 360–450 Hz compute ceiling |
 | with JPEG decode included | ~4.0 ms → ~250 Hz |
+
+The current nominal factory geometry reproduces all 337/337 localizations. It keeps the
+detector-to-vehicle offset explicit instead of absorbing it into the camera extrinsics.
 
 Per-stage, in milliseconds (one representative run):
 
@@ -53,8 +57,8 @@ same command measured 2.23 ms on an idle host and 2.79 ms with the simulator, 3D
 AI process running, repeatable to ±0.03 ms within either state. Two consequences, and both
 matter because timing *is* the deliverable:
 
-- never compare a timing across machine states — only within one run of the sweep;
-- the Arm numbers will be measured on an otherwise-idle board with thread pinning, and the
+- Never compare a timing across machine states — only within one run of the sweep;
+- The Arm numbers will be measured on an otherwise-idle board with thread pinning, and the
   conditions reported alongside them.
 
 ### YOLO26n on Arm — measured
@@ -271,6 +275,12 @@ Findings that shaped the code, kept here because each one is a trap:
   parent link; measured against the pose actually reported as truth it is **0.4334 m**,
   constant across a 2.26 m climb. Taking the file value puts every altitude 253 mm out, while
   leaving horizontal accuracy untouched — so it reads as a calibration quirk, not a bug.
+- **Bundle adjustment must use the point the detector sees.** For the colour detector, pass
+  `--marker-offset` to `bench.refine_calibration` so the optimizer compares marker pixels with
+  marker-height ground truth. Without it, the offset can be absorbed into camera extrinsics:
+  reprojection improves while the physical calibration and triangulation can get worse. The
+  current factory config therefore uses nominal simulator poses plus an explicit 0.4333 m
+  detector offset.
 - **JPEG barely costs accuracy, and saves 70× the bandwidth.** q90 measures 3.84 mm against
   4.22 mm for raw frames (mild low-pass stabilises a 7 px blob's centroid), at 6 Mbit/s
   versus 442. It collapses below q80.
@@ -300,3 +310,18 @@ deployable AI. Both wire formats are owned and documented here — the frame tra
 [dronevision/io/sources/net.py](dronevision/io/sources/net.py) and the state estimate in
 [dronevision/io/schema.py](dronevision/io/schema.py) — so either service can be reimplemented
 against them, including by real hardware.
+
+## Documentation site
+
+The project wiki is built with Material for MkDocs. Preview it locally without publishing:
+
+```bash
+python3 -m venv .venv-docs
+source .venv-docs/bin/activate
+pip install -r requirements-docs.txt
+mkdocs serve
+```
+
+Open `http://127.0.0.1:8000`. GitHub Pages deployment is defined in
+`.github/workflows/docs.yml` and runs only after the documentation changes are pushed to
+`main` and Pages is enabled for GitHub Actions in the repository settings.

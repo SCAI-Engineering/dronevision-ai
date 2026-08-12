@@ -4,8 +4,10 @@ __pycache__/
 build/
 dist/
 .venv/
+.venv-docs/
 venv/
 .pytest_cache/
+site/
 
 # Benchmark output is regenerated; the committed results table lives in README.
 bench/out/
